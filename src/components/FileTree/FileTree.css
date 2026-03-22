@@ -1,0 +1,121 @@
+.filetree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  user-select: none;
+  overflow: hidden;
+}
+
+.ft-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  height: 36px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ft-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.ft-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.ft-btn:hover { color: var(--accent); }
+
+.ft-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.fn { display: flex; flex-direction: column; }
+
+/* ── Row ── */
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding-right: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.1s;
+}
+.frow:hover { background: var(--bg-tertiary); }
+
+/* ── Directory ── */
+.frow.dir { color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.frow.dir:hover { color: var(--text-primary); }
+
+.chevron {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 10px;
+  flex-shrink: 0;
+}
+
+/* ── File ── */
+.frow.file { color: var(--text-secondary); font-size: 12px; }
+.frow.file:hover { color: var(--text-primary); }
+.frow.file.active {
+  background: var(--accent-dim2);
+  color: var(--text-primary);
+  border-left: 2px solid var(--accent);
+}
+
+.fdot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.fname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  line-height: 1;
+}
+
+.empty-dir {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  font-style: italic;
+}
+
+.ft-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s;
+  letter-spacing: 0.04em;
+}
+.ft-empty:hover { color: var(--accent); }
