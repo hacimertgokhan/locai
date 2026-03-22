@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import type * as MonacoType from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,7 +6,71 @@ import { useEditorStore } from "../../store/editorStore";
 import { DiffHunk } from "../../types";
 import "./MonacoEditor.css";
 
-// ─── View zone + decoration tracking ───────────────────────────────
+// ─── Monaco theme definitions ──────────────────────────────────────
+const MONACO_THEMES = {
+  dark: {
+    base: "vs-dark" as const,
+    colors: {
+      "editor.background": "#0f0f10",
+      "editor.foreground": "#eaeaea",
+      "editorLineNumber.foreground": "#4a4a50",
+      "editorLineNumber.activeForeground": "#a1a1aa",
+      "editorCursor.foreground": "#d97757",
+      "editor.selectionBackground": "#d9775730",
+      "editor.inactiveSelectionBackground": "#d9775718",
+      "editorIndentGuide.background1": "#2a2a2e",
+      "editorGutter.background": "#0f0f10",
+      "editorWidget.background": "#1a1a1d",
+      "editorWidget.border": "#2a2a2e",
+      "input.background": "#1a1a1d",
+      "input.border": "#2a2a2e",
+      "list.activeSelectionBackground": "#d9775720",
+      "list.hoverBackground": "#1a1a1d",
+    },
+  },
+  grey: {
+    base: "vs-dark" as const,
+    colors: {
+      "editor.background": "#1b1e23",
+      "editor.foreground": "#f3f4f6",
+      "editorLineNumber.foreground": "#4a5568",
+      "editorLineNumber.activeForeground": "#a9b2c0",
+      "editorCursor.foreground": "#d97757",
+      "editor.selectionBackground": "#d9775730",
+      "editor.inactiveSelectionBackground": "#d9775718",
+      "editorIndentGuide.background1": "#333840",
+      "editorGutter.background": "#1b1e23",
+      "editorWidget.background": "#23272c",
+      "editorWidget.border": "#333840",
+      "input.background": "#23272c",
+      "input.border": "#333840",
+      "list.activeSelectionBackground": "#d9775720",
+      "list.hoverBackground": "#23272c",
+    },
+  },
+  light: {
+    base: "vs" as const,
+    colors: {
+      "editor.background": "#ffffff",
+      "editor.foreground": "#111827",
+      "editorLineNumber.foreground": "#9ca3af",
+      "editorLineNumber.activeForeground": "#4b5563",
+      "editorCursor.foreground": "#ca6242",
+      "editor.selectionBackground": "#ca624225",
+      "editor.inactiveSelectionBackground": "#ca624215",
+      "editorIndentGuide.background1": "#e5e7eb",
+      "editorGutter.background": "#f3f4f6",
+      "editorWidget.background": "#f3f4f6",
+      "editorWidget.border": "#e5e7eb",
+      "input.background": "#ffffff",
+      "input.border": "#e5e7eb",
+      "list.activeSelectionBackground": "#ca624218",
+      "list.hoverBackground": "#f3f4f6",
+    },
+  },
+};
+
+// ─── View zone + decoration tracking ──────────────────────────────
 interface ViewZoneRef {
   hunkId: number;
   zoneId: string;
@@ -33,7 +97,7 @@ function applyDiff(
 
   clearDiff(editor);
 
-  // ── Decorations (red = removed lines) ──────────────────────────
+  // ── Decorations (red = removed lines) ─────────────────────────
   const decorations: MonacoType.editor.IModelDeltaDecoration[] = [];
 
   for (const hunk of hunks) {
@@ -58,7 +122,7 @@ function applyDiff(
     decorationCollection.set(decorations);
   }
 
-  // ── View zones (green = added lines) ───────────────────────────
+  // ── View zones (green = added lines) ──────────────────────────
   editor.changeViewZones((acc) => {
     for (const hunk of hunks) {
       if ((hunk.kind === "Add" || hunk.kind === "Change") && hunk.newLines.length > 0) {
@@ -70,7 +134,6 @@ function applyDiff(
         const domNode = document.createElement("div");
         domNode.className = "diff-add-zone";
 
-        // Build line elements
         hunk.newLines.forEach((line) => {
           const lineEl = document.createElement("div");
           lineEl.className = "diff-add-line";
@@ -99,6 +162,7 @@ function applyDiff(
 export function MonacoEditorPanel() {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
@@ -112,6 +176,7 @@ export function MonacoEditorPanel() {
   const rejectHunk = useEditorStore((s) => s.rejectHunk);
   const acceptAll = useEditorStore((s) => s.acceptAll);
   const rejectAll = useEditorStore((s) => s.rejectAll);
+  const theme = useEditorStore((s) => s.theme);
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
 
@@ -153,7 +218,13 @@ export function MonacoEditorPanel() {
     } else {
       clearDiff(editorRef.current);
     }
-  }, [diffHunks, isDiffMode]);
+  }, [diffHunks, isDiffMode, editorReady]);
+
+  // Sync Monaco theme with app theme
+  useEffect(() => {
+    if (!monacoRef.current || !editorReady) return;
+    monacoRef.current.editor.setTheme(`locai-${theme}`);
+  }, [theme, editorReady]);
 
   const handleMount = (
     editor: MonacoType.editor.IStandaloneCodeEditor,
@@ -162,29 +233,27 @@ export function MonacoEditorPanel() {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    monaco.editor.defineTheme("locai", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [],
-      colors: {
-        "editor.background": "#0f0f10",
-        "editor.foreground": "#eaeaea",
-        "editorLineNumber.foreground": "#4a4a50",
-        "editorLineNumber.activeForeground": "#a1a1aa",
-        "editorCursor.foreground": "#d97757",
-        "editor.selectionBackground": "#d9775730",
-        "editor.inactiveSelectionBackground": "#d9775718",
-        "editorIndentGuide.background1": "#2a2a2e",
-        "editorGutter.background": "#0f0f10",
-        "editorWidget.background": "#1a1a1d",
-        "editorWidget.border": "#2a2a2e",
-        "input.background": "#1a1a1d",
-        "input.border": "#2a2a2e",
-        "list.activeSelectionBackground": "#d9775720",
-        "list.hoverBackground": "#1a1a1d",
-      },
+    // Define all three themes
+    (["dark", "grey", "light"] as const).forEach((t) => {
+      const def = MONACO_THEMES[t];
+      monaco.editor.defineTheme(`locai-${t}`, {
+        base: def.base,
+        inherit: true,
+        rules: [],
+        colors: def.colors,
+      });
     });
-    monaco.editor.setTheme("locai");
+    monaco.editor.setTheme(`locai-${theme}`);
+
+    // Suppress TS import errors for arbitrary project files
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false,
+    });
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false,
+    });
 
     // Inject view zone styles
     if (!document.getElementById("locai-diff-styles")) {
@@ -218,6 +287,8 @@ export function MonacoEditorPanel() {
       `;
       document.head.appendChild(style);
     }
+
+    setEditorReady(true);
   };
 
   if (openFiles.length === 0) {
@@ -296,7 +367,7 @@ export function MonacoEditorPanel() {
             height="100%"
             language={activeFile.language}
             value={activeFile.content}
-            theme="locai"
+            theme={`locai-${theme}`}
             onMount={handleMount}
             onChange={(val) => {
               if (val !== undefined) updateFileContent(activeFile.path, val);

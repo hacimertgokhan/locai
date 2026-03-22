@@ -47,10 +47,18 @@ function SessionList({ onClose }: { onClose: () => void }) {
 
 // ── Message bubble ─────────────────────────────────────────────────
 function MessageBubble({
-  role, content, hunks, filePath
+  role, content, hunks, modifiedContent, filePath
 }: {
-  role: "user" | "assistant"; content: string; hunks?: DiffHunk[]; filePath?: string;
+  role: "user" | "assistant"; content: string; hunks?: DiffHunk[]; modifiedContent?: string; filePath?: string;
 }) {
+  const setDiff = useEditorStore((s) => s.setDiff);
+
+  const handleViewDiff = () => {
+    if (hunks && modifiedContent) {
+      setDiff(hunks, modifiedContent);
+    }
+  };
+
   return (
     <div className={`msg msg-${role} animate-slide-up`}>
       <div className="msg-role">{role === "user" ? "you" : "ai"}</div>
@@ -65,6 +73,11 @@ function MessageBubble({
                 <span className="msg-hunk-loc">line {h.oldStart}</span>
               </div>
             ))}
+            {modifiedContent && (
+              <button className="msg-view-diff" onClick={handleViewDiff}>
+                view in editor
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -167,6 +180,7 @@ export function AIPanel() {
           ? `Applied ${hunks.length} change${hunks.length !== 1 ? "s" : ""}`
           : "No changes needed.",
         hunks,
+        modifiedContent: hunks.length > 0 ? modified : undefined,
         filePath: activeFile.path,
         timestamp: Date.now(),
       });
@@ -258,6 +272,7 @@ export function AIPanel() {
             role={m.role}
             content={m.content}
             hunks={m.hunks}
+            modifiedContent={m.modifiedContent}
             filePath={m.filePath}
           />
         ))}

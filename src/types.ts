@@ -28,6 +28,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   hunks?: DiffHunk[];
+  modifiedContent?: string;
   filePath?: string;
   timestamp: number;
 }
