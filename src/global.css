@@ -116,34 +116,147 @@ button, input, select, textarea {
   color: var(--text-primary);
 }
 
-/* ── Layout ── */
-.app {
-  display: grid;
-  grid-template-columns: 220px 1fr 340px;
-  grid-template-rows: 100vh;
+/* ── Shell: tab bar row + editor area ── */
+.app-shell {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  width: 100%;
   overflow: hidden;
   background: var(--bg-primary);
 }
 
-.sidebar {
-  grid-column: 1;
+.project-tab-row {
+  height: 28px;
+  flex-shrink: 0;
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
+/* ── Layout (inner) ── */
+.app {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Sidebar visible: activity bar (44px) + sidebar (220px) + editor (1fr) + ai panel (340px) */
+.app.sidebar-open {
+  grid-template-columns: 44px 220px 1fr 340px;
+}
+
+/* Sidebar hidden: activity bar (44px) + editor (1fr) + ai panel (340px) */
+.app.sidebar-closed {
+  grid-template-columns: 44px 1fr 340px;
+}
+
+
+/* ── Sidebar ── */
+.sidebar {
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── Editor pane ── */
 .editor-pane {
-  grid-column: 2;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
+}
+
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Terminal toggle button ── */
+.terminal-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: color 0.15s;
+}
+
+.terminal-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.terminal-toggle-btn.active {
+  color: var(--accent);
+}
+
+/* ── Terminal container ── */
+.terminal-container {
+  flex-shrink: 0;
+  height: 220px;
+  min-height: 120px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.terminal-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.terminal-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.terminal-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
 }
 
 .ai-pane {
-  grid-column: 3;
   overflow: hidden;
   border-left: 1px solid var(--border);
+  min-width: 0;
 }
 
 /* ── Animations ── */

@@ -1,0 +1,143 @@
+/* ── Project Tab Bar ─────────────────────────────────────────────── */
+.project-tab-bar {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.project-tabs-scroll {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+  gap: 1px;
+  padding: 0 2px;
+}
+.project-tabs-scroll::-webkit-scrollbar { display: none; }
+
+/* ── Single tab ── */
+.project-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  height: 100%;
+  min-width: 90px;
+  max-width: 180px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  position: relative;
+  transition: color 0.15s, background 0.15s;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.project-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.project-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.project-tab-icon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.project-tab.active .project-tab-icon {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.project-tab-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.project-tab-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 1px 4px;
+  min-width: 0;
+  outline: none;
+}
+
+.project-tab-open-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.project-tab-open-btn svg {
+  width: 10px;
+  height: 10px;
+}
+.project-tab-open-btn:hover { opacity: 1; }
+
+.project-tab-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 9px;
+  padding: 2px 3px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  flex-shrink: 0;
+  border-radius: 2px;
+  line-height: 1;
+}
+.project-tab:hover .project-tab-close { opacity: 0.7; }
+.project-tab-close:hover {
+  opacity: 1 !important;
+  color: var(--red);
+  background: var(--red-dim);
+}
+
+/* ── New tab button ── */
+.project-tab-new {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 16px;
+  font-weight: 300;
+  cursor: pointer;
+  padding: 0 12px;
+  height: 100%;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+}
+.project-tab-new:hover {
+  color: var(--accent);
+  background: var(--bg-secondary);
+}

@@ -6,163 +6,56 @@ import { useEditorStore } from "../../store/editorStore";
 import { DiffHunk } from "../../types";
 import "./MonacoEditor.css";
 
-// ─── Monaco theme definitions ──────────────────────────────────────
 const MONACO_THEMES = {
   dark: {
     base: "vs-dark" as const,
     colors: {
-      "editor.background": "#0f0f10",
-      "editor.foreground": "#eaeaea",
-      "editorLineNumber.foreground": "#4a4a50",
-      "editorLineNumber.activeForeground": "#a1a1aa",
-      "editorCursor.foreground": "#d97757",
-      "editor.selectionBackground": "#d9775730",
-      "editor.inactiveSelectionBackground": "#d9775718",
-      "editorIndentGuide.background1": "#2a2a2e",
-      "editorGutter.background": "#0f0f10",
-      "editorWidget.background": "#1a1a1d",
-      "editorWidget.border": "#2a2a2e",
-      "input.background": "#1a1a1d",
-      "input.border": "#2a2a2e",
-      "list.activeSelectionBackground": "#d9775720",
+      "editor.background": "#0f0f10", "editor.foreground": "#eaeaea",
+      "editorLineNumber.foreground": "#4a4a50", "editorLineNumber.activeForeground": "#a1a1aa",
+      "editorCursor.foreground": "#d97757", "editor.selectionBackground": "#d9775730",
+      "editor.inactiveSelectionBackground": "#d9775718", "editorIndentGuide.background1": "#2a2a2e",
+      "editorGutter.background": "#0f0f10", "editorWidget.background": "#1a1a1d",
+      "editorWidget.border": "#2a2a2e", "input.background": "#1a1a1d",
+      "input.border": "#2a2a2e", "list.activeSelectionBackground": "#d9775720",
       "list.hoverBackground": "#1a1a1d",
     },
   },
   grey: {
     base: "vs-dark" as const,
     colors: {
-      "editor.background": "#1b1e23",
-      "editor.foreground": "#f3f4f6",
-      "editorLineNumber.foreground": "#4a5568",
-      "editorLineNumber.activeForeground": "#a9b2c0",
-      "editorCursor.foreground": "#d97757",
-      "editor.selectionBackground": "#d9775730",
-      "editor.inactiveSelectionBackground": "#d9775718",
-      "editorIndentGuide.background1": "#333840",
-      "editorGutter.background": "#1b1e23",
-      "editorWidget.background": "#23272c",
-      "editorWidget.border": "#333840",
-      "input.background": "#23272c",
-      "input.border": "#333840",
-      "list.activeSelectionBackground": "#d9775720",
+      "editor.background": "#1b1e23", "editor.foreground": "#f3f4f6",
+      "editorLineNumber.foreground": "#4a5568", "editorLineNumber.activeForeground": "#a9b2c0",
+      "editorCursor.foreground": "#d97757", "editor.selectionBackground": "#d9775730",
+      "editor.inactiveSelectionBackground": "#d9775718", "editorIndentGuide.background1": "#333840",
+      "editorGutter.background": "#1b1e23", "editorWidget.background": "#23272c",
+      "editorWidget.border": "#333840", "input.background": "#23272c",
+      "input.border": "#333840", "list.activeSelectionBackground": "#d9775720",
       "list.hoverBackground": "#23272c",
     },
   },
   light: {
     base: "vs" as const,
     colors: {
-      "editor.background": "#ffffff",
-      "editor.foreground": "#111827",
-      "editorLineNumber.foreground": "#9ca3af",
-      "editorLineNumber.activeForeground": "#4b5563",
-      "editorCursor.foreground": "#ca6242",
-      "editor.selectionBackground": "#ca624225",
-      "editor.inactiveSelectionBackground": "#ca624215",
-      "editorIndentGuide.background1": "#e5e7eb",
-      "editorGutter.background": "#f3f4f6",
-      "editorWidget.background": "#f3f4f6",
-      "editorWidget.border": "#e5e7eb",
-      "input.background": "#ffffff",
-      "input.border": "#e5e7eb",
-      "list.activeSelectionBackground": "#ca624218",
+      "editor.background": "#ffffff", "editor.foreground": "#111827",
+      "editorLineNumber.foreground": "#9ca3af", "editorLineNumber.activeForeground": "#4b5563",
+      "editorCursor.foreground": "#ca6242", "editor.selectionBackground": "#ca624225",
+      "editor.inactiveSelectionBackground": "#ca624215", "editorIndentGuide.background1": "#e5e7eb",
+      "editorGutter.background": "#f3f4f6", "editorWidget.background": "#f3f4f6",
+      "editorWidget.border": "#e5e7eb", "input.background": "#ffffff",
+      "input.border": "#e5e7eb", "list.activeSelectionBackground": "#ca624218",
       "list.hoverBackground": "#f3f4f6",
     },
   },
 };
 
-// ─── View zone + decoration tracking ──────────────────────────────
-interface ViewZoneRef {
-  hunkId: number;
-  zoneId: string;
-}
-
-let decorationCollection: MonacoType.editor.IEditorDecorationsCollection | null = null;
-let viewZones: ViewZoneRef[] = [];
-
-function clearDiff(editor: MonacoType.editor.IStandaloneCodeEditor) {
-  decorationCollection?.clear();
-  editor.changeViewZones((acc) => {
-    viewZones.forEach(({ zoneId }) => acc.removeZone(zoneId));
-  });
-  viewZones = [];
-}
-
-function applyDiff(
-  editor: MonacoType.editor.IStandaloneCodeEditor,
-  monaco: Monaco,
-  hunks: DiffHunk[]
-) {
-  const model = editor.getModel();
-  if (!model) return;
-
-  clearDiff(editor);
-
-  // ── Decorations (red = removed lines) ─────────────────────────
-  const decorations: MonacoType.editor.IModelDeltaDecoration[] = [];
-
-  for (const hunk of hunks) {
-    if (hunk.kind === "Remove" || hunk.kind === "Change") {
-      const startLine = Math.min(hunk.oldStart, model.getLineCount());
-      const endLine = Math.min(hunk.oldStart + hunk.oldCount - 1, model.getLineCount());
-      decorations.push({
-        range: new monaco.Range(startLine, 1, endLine, model.getLineMaxColumn(endLine)),
-        options: {
-          isWholeLine: true,
-          className: "diff-del-line",
-          overviewRuler: { color: "var(--red)", position: 4 },
-          minimap: { color: "var(--red)", position: 1 },
-        },
-      });
-    }
-  }
-
-  if (!decorationCollection) {
-    decorationCollection = editor.createDecorationsCollection(decorations);
-  } else {
-    decorationCollection.set(decorations);
-  }
-
-  // ── View zones (green = added lines) ──────────────────────────
-  editor.changeViewZones((acc) => {
-    for (const hunk of hunks) {
-      if ((hunk.kind === "Add" || hunk.kind === "Change") && hunk.newLines.length > 0) {
-        const afterLine =
-          hunk.kind === "Change"
-            ? Math.min(hunk.oldStart + hunk.oldCount - 1, model.getLineCount())
-            : Math.max(hunk.oldStart - 1, 0);
-
-        const domNode = document.createElement("div");
-        domNode.className = "diff-add-zone";
-
-        hunk.newLines.forEach((line) => {
-          const lineEl = document.createElement("div");
-          lineEl.className = "diff-add-line";
-          lineEl.textContent = line || " ";
-          domNode.appendChild(lineEl);
-        });
-
-        const zoneId = acc.addZone({
-          afterLineNumber: afterLine,
-          heightInLines: hunk.newLines.length,
-          domNode,
-          marginDomNode: (() => {
-            const m = document.createElement("div");
-            m.className = "diff-add-margin";
-            return m;
-          })(),
-        });
-
-        viewZones.push({ hunkId: hunk.id, zoneId });
-      }
-    }
-  });
-}
-
-// ─── Component ────────────────────────────────────────────────────
 export function MonacoEditorPanel() {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const [editorReady, setEditorReady] = useState(false);
+
+  // Use deltaDecorations IDs (string[]) — more reliable than collection API
+  const decoIdsRef = useRef<string[]>([]);
+  const zoneIdsRef = useRef<string[]>([]);
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
@@ -172,36 +65,162 @@ export function MonacoEditorPanel() {
   const closeFile = useEditorStore((s) => s.closeFile);
   const diffHunks = useEditorStore((s) => s.diffHunks);
   const isDiffMode = useEditorStore((s) => s.isDiffMode);
-  const acceptHunk = useEditorStore((s) => s.acceptHunk);
-  const rejectHunk = useEditorStore((s) => s.rejectHunk);
   const acceptAll = useEditorStore((s) => s.acceptAll);
   const rejectAll = useEditorStore((s) => s.rejectAll);
   const theme = useEditorStore((s) => s.theme);
-
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
+
+  const clearDiffDecorations = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    // Remove decorations
+    decoIdsRef.current = (editor as any).deltaDecorations(decoIdsRef.current, []);
+    // Remove view zones
+    editor.changeViewZones((acc) => {
+      zoneIdsRef.current.forEach((id) => acc.removeZone(id));
+    });
+    zoneIdsRef.current = [];
+  }, []);
+
+  const applyDiffDecorations = useCallback((hunks: DiffHunk[]) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    clearDiffDecorations();
+
+    const lineH = editor.getOption(monaco.editor.EditorOption.lineHeight);
+    const fontSize = editor.getOption(monaco.editor.EditorOption.fontSize);
+    const fontFamily = editor.getOption(monaco.editor.EditorOption.fontFamily);
+
+    // ── Red highlight for deleted/changed lines ──────────────────
+    const rawDecos: MonacoType.editor.IModelDeltaDecoration[] = [];
+    for (const hunk of hunks) {
+      if (hunk.kind === "Remove" || hunk.kind === "Change") {
+        const s = Math.min(hunk.oldStart, model.getLineCount());
+        const e = Math.min(hunk.oldStart + hunk.oldCount - 1, model.getLineCount());
+        rawDecos.push({
+          range: new monaco.Range(s, 1, e, model.getLineMaxColumn(e)),
+          options: {
+            isWholeLine: true,
+            // inline styles via linesDecorationsClassName keep working even without injected CSS
+            linesDecorationsClassName: "diff-del-gutter",
+            className: "diff-del-bg",
+            inlineClassName: "diff-del-text",
+            overviewRuler: { color: "rgba(241,76,76,0.7)", position: 4 },
+            minimap: { color: "rgba(241,76,76,0.5)", position: 1 },
+          },
+        });
+      }
+    }
+    decoIdsRef.current = (editor as any).deltaDecorations([], rawDecos);
+
+    // ── Green view zones for added/changed lines ─────────────────
+    editor.changeViewZones((acc) => {
+      for (const hunk of hunks) {
+        if ((hunk.kind === "Add" || hunk.kind === "Change") && hunk.newLines.length > 0) {
+          const afterLine =
+            hunk.kind === "Change"
+              ? Math.min(hunk.oldStart + hunk.oldCount - 1, model.getLineCount())
+              : Math.max(hunk.oldStart - 1, 0);
+
+          const container = document.createElement("div");
+          Object.assign(container.style, {
+            background: "rgba(78,201,176,0.10)",
+            borderLeft: "3px solid rgba(78,201,176,0.75)",
+            boxSizing: "border-box",
+            width: "100%",
+            overflow: "hidden",
+            lineHeight: `${lineH}px`,
+            fontSize: `${fontSize}px`,
+            fontFamily,
+          });
+
+          for (const line of hunk.newLines) {
+            const row = document.createElement("div");
+            Object.assign(row.style, {
+              display: "flex",
+              alignItems: "center",
+              height: `${lineH}px`,
+              boxSizing: "border-box",
+            });
+            const prefix = document.createElement("span");
+            Object.assign(prefix.style, {
+              display: "inline-block",
+              width: "22px",
+              minWidth: "22px",
+              textAlign: "center",
+              color: "#4ec9b0",
+              fontWeight: "700",
+              fontSize: "12px",
+              flexShrink: "0",
+            });
+            prefix.textContent = "+";
+            const code = document.createElement("span");
+            Object.assign(code.style, {
+              color: "#4ec9b0",
+              whiteSpace: "pre",
+              flex: "1",
+            });
+            code.textContent = line || " ";
+            row.appendChild(prefix);
+            row.appendChild(code);
+            container.appendChild(row);
+          }
+
+          const margin = document.createElement("div");
+          Object.assign(margin.style, {
+            background: "rgba(78,201,176,0.12)",
+            width: "100%",
+            height: "100%",
+          });
+
+          const id = acc.addZone({
+            afterLineNumber: afterLine,
+            heightInLines: hunk.newLines.length,
+            domNode: container,
+            marginDomNode: margin,
+          });
+          zoneIdsRef.current.push(id);
+        }
+      }
+    });
+
+    // Force layout so zones appear immediately
+    editor.layout();
+  }, [clearDiffDecorations]);
+
+  // Inject minimal CSS for the gutter/background classes (not relying on global injection order)
+  useEffect(() => {
+    if (document.getElementById("locai-diff-css")) return;
+    const el = document.createElement("style");
+    el.id = "locai-diff-css";
+    el.textContent = `
+      .diff-del-bg { background: rgba(241,76,76,0.18) !important; }
+      .diff-del-text { opacity: 0.45 !important; text-decoration: line-through !important; text-decoration-color: rgba(241,76,76,0.65) !important; }
+      .diff-del-gutter { background: rgba(241,76,76,0.6) !important; width: 3px !important; margin-left: 2px !important; }
+    `;
+    document.head.appendChild(el);
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!activeFile) return;
     try {
       await invoke("write_file", { path: activeFile.path, content: activeFile.content });
       markFileSaved(activeFile.path);
-    } catch (e) {
-      console.error("Save failed:", e);
-    }
+    } catch (e) { console.error("Save failed:", e); }
   }, [activeFile, markFileSaved]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
-      }
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave(); }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [handleSave]);
 
-  // Sync editor content when switching files
   useEffect(() => {
     if (!editorRef.current || !activeFile) return;
     const model = editorRef.current.getModel();
@@ -210,84 +229,49 @@ export function MonacoEditorPanel() {
     }
   }, [activeFilePath]);
 
-  // Apply / clear diff decorations + view zones
   useEffect(() => {
-    if (!editorRef.current || !monacoRef.current) return;
+    if (!editorReady) return;
     if (isDiffMode && diffHunks.length > 0) {
-      applyDiff(editorRef.current, monacoRef.current, diffHunks);
+      applyDiffDecorations(diffHunks);
     } else {
-      clearDiff(editorRef.current);
+      clearDiffDecorations();
     }
-  }, [diffHunks, isDiffMode, editorReady]);
+  }, [diffHunks, isDiffMode, editorReady, applyDiffDecorations, clearDiffDecorations]);
 
-  // Sync Monaco theme with app theme
   useEffect(() => {
     if (!monacoRef.current || !editorReady) return;
     monacoRef.current.editor.setTheme(`locai-${theme}`);
   }, [theme, editorReady]);
 
-  const handleMount = (
-    editor: MonacoType.editor.IStandaloneCodeEditor,
-    monaco: Monaco
-  ) => {
+  const handleMount = (editor: MonacoType.editor.IStandaloneCodeEditor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-
-    // Define all three themes
+    // Reset refs for this fresh editor instance
+    decoIdsRef.current = [];
+    zoneIdsRef.current = [];
     (["dark", "grey", "light"] as const).forEach((t) => {
-      const def = MONACO_THEMES[t];
       monaco.editor.defineTheme(`locai-${t}`, {
-        base: def.base,
+        base: MONACO_THEMES[t].base,
         inherit: true,
         rules: [],
-        colors: def.colors,
+        colors: MONACO_THEMES[t].colors,
       });
     });
     monaco.editor.setTheme(`locai-${theme}`);
-
-    // Suppress TS import errors for arbitrary project files
-    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: false,
-    });
-    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: false,
-    });
-
-    // Inject view zone styles
-    if (!document.getElementById("locai-diff-styles")) {
-      const style = document.createElement("style");
-      style.id = "locai-diff-styles";
-      style.textContent = `
-        .diff-del-line {
-          background: rgba(241,76,76,0.13) !important;
-          border-left: 2px solid #f14c4c !important;
-        }
-        .diff-add-zone {
-          background: rgba(78,201,176,0.10);
-          border-left: 2px solid #4ec9b0;
-          font-family: 'JetBrains Mono','Fira Code','Consolas',monospace;
-          font-size: 13px;
-          line-height: 19px;
-          overflow: hidden;
-          width: 100%;
-          box-sizing: border-box;
-        }
-        .diff-add-line {
-          color: #4ec9b0;
-          padding: 0 8px;
-          white-space: pre;
-          min-height: 19px;
-        }
-        .diff-add-margin {
-          background: rgba(78,201,176,0.18);
-          width: 100%;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
+    // Enable JSX so .tsx files don't get false "'>'" syntax errors
+    const tsCompilerOpts: any = {
+      jsx: 2 as any, // 2 = React (JsxEmit.React)
+      jsxFactory: "React.createElement",
+      target: 99 as any, // ESNext
+      allowSyntheticDefaultImports: true,
+      esModuleInterop: true,
+      allowJs: true,
+      checkJs: false,
+    };
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions(tsCompilerOpts);
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions(tsCompilerOpts);
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
     setEditorReady(true);
   };
 
@@ -304,7 +288,6 @@ export function MonacoEditorPanel() {
 
   return (
     <div className="ed-panel">
-      {/* Tab bar */}
       <div className="ed-tabs">
         {openFiles.map((file) => (
           <div
@@ -322,56 +305,24 @@ export function MonacoEditorPanel() {
         ))}
       </div>
 
-      {/* Diff bar */}
-      {isDiffMode && (
-        <div className="ed-diff-bar animate-slide-up">
-          <div className="ed-diff-info">
-            <span className="ed-diff-dot" />
-            <span>{diffHunks.length} change{diffHunks.length !== 1 ? "s" : ""} suggested</span>
-          </div>
-          <div className="ed-diff-actions">
-            <button className="ed-diff-accept" onClick={acceptAll}>Accept all</button>
-            <button className="ed-diff-reject" onClick={rejectAll}>Reject all</button>
-          </div>
-        </div>
-      )}
-
-      {/* Hunk list */}
-      {isDiffMode && diffHunks.length > 0 && (
-        <div className="ed-hunks animate-slide-up">
-          {diffHunks.map((hunk) => (
-            <div key={hunk.id} className="ed-hunk">
-              <span className={`ed-hunk-kind kind-${hunk.kind.toLowerCase()}`}>
-                {hunk.kind}
-              </span>
-              <span className="ed-hunk-loc">
-                line {hunk.oldStart}
-                {hunk.oldCount > 1 ? `–${hunk.oldStart + hunk.oldCount - 1}` : ""}
-              </span>
-              <span className="ed-hunk-preview">
-                {hunk.oldLines[0]?.trim().slice(0, 40)}
-              </span>
-              <div className="ed-hunk-btns">
-                <button className="ed-hunk-acc" onClick={() => acceptHunk(hunk.id)}>✓</button>
-                <button className="ed-hunk-rej" onClick={() => rejectHunk(hunk.id)}>✗</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Monaco */}
       {activeFile && (
         <div className="ed-monaco">
+          {isDiffMode && diffHunks.length > 0 && (
+            <div className="ed-inline-diff-bar animate-slide-up">
+              <span className="ed-inline-diff-count">
+                {diffHunks.length} change{diffHunks.length !== 1 ? "s" : ""}
+              </span>
+              <button className="ed-inline-accept" onClick={acceptAll}>✓ Accept all</button>
+              <button className="ed-inline-reject" onClick={rejectAll}>✗ Reject all</button>
+            </div>
+          )}
           <Editor
             height="100%"
             language={activeFile.language}
             value={activeFile.content}
             theme={`locai-${theme}`}
             onMount={handleMount}
-            onChange={(val) => {
-              if (val !== undefined) updateFileContent(activeFile.path, val);
-            }}
+            onChange={(val) => { if (val !== undefined) updateFileContent(activeFile.path, val); }}
             options={{
               fontSize: 13,
               fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace",

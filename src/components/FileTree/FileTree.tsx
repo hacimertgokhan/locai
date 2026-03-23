@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileEntry } from "../../types";
@@ -35,7 +35,6 @@ function FileNode({
 
   const handleDirClick = async () => {
     if (!expanded && children === null) {
-      // lazy load
       setLoading(true);
       try {
         const loaded = await invoke<FileEntry[]>("read_dir_shallow", { path: entry.path });
@@ -93,18 +92,34 @@ function FileNode({
 }
 
 export function FileTree() {
-  const [tree, setTree] = useState<FileEntry[]>([]);
   const workspacePath = useEditorStore((s) => s.workspacePath);
   const setWorkspacePath = useEditorStore((s) => s.setWorkspacePath);
+  const setTerminalCwd = useEditorStore((s) => s.setTerminalCwd);
+  const activeTerminalId = useEditorStore((s) => s.activeTerminalId);
   const openFile = useEditorStore((s) => s.openFile);
+  const setTabFileTree = useEditorStore((s) => s.setTabFileTree);
+  // Derive tree from store so tab switches update it automatically
+  const tree = useEditorStore((s) => s.fileTree);
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || typeof selected !== "string") return;
     setWorkspacePath(selected);
+    setTerminalCwd(activeTerminalId, selected);
     const entries = await invoke<FileEntry[]>("read_dir_recursive", { path: selected });
-    setTree(entries);
+    setTabFileTree(entries);
   };
+
+  // Listen for programmatic workspace opens (e.g. after agent creates a project)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { path, entries } = (e as CustomEvent).detail as { path: string; entries: FileEntry[] };
+      setWorkspacePath(path);
+      setTabFileTree(entries);
+    };
+    window.addEventListener("locai:open-workspace", handler);
+    return () => window.removeEventListener("locai:open-workspace", handler);
+  }, [setWorkspacePath, setTabFileTree]);
 
   const handleFileClick = async (entry: FileEntry) => {
     try {

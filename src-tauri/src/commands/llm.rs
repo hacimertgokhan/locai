@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelInfo {
     pub id: String,
-    pub provider: String, // "ollama" | "lmstudio"
+    pub provider: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,18 +86,145 @@ struct ChatMessage {
     content: String,
 }
 
-const SYSTEM_PROMPT: &str = r#"You are a code editor AI. Your ONLY job is to output the complete, modified source file.
+/// Base system prompt — always included.
+const BASE_SYSTEM_PROMPT: &str = r#"You are a code editor AI assistant. The user may write instructions in any language (English, Turkish, etc.) — always understand and apply them.
 
-CRITICAL RULES — violating any rule makes your output useless:
+Your ONLY output must be the complete, modified source file. Never write explanations. Never say "I cannot". Always make the best possible improvement based on the instruction.
+
+CRITICAL OUTPUT RULES:
 - Output the ENTIRE file from line 1 to the last line. Never truncate or skip lines.
-- Make ONLY the minimal changes requested. Do not rewrite, reorganize, or remove unrelated code.
+- If the instruction is vague (e.g. "improve", "clean up", "yapıyı geliştir"), make reasonable improvements: fix naming, add missing error handling, improve readability, extract repeated code into functions, etc.
 - Do NOT output any explanation, comments about what you changed, or markdown.
 - Do NOT wrap output in ```code fences``` or any other formatting.
 - Copy every unchanged line EXACTLY as-is, character by character.
 - Your first character of output must be the first character of the file.
 - Your last character of output must be the last character of the file.
+- Preserve all whitespace, indentation, and line endings exactly."#;
 
-If the file has 200 lines, your output must also have ~200 lines (±lines added or removed by the edit)."#;
+/// Detect the task type from user prompt keywords and return specific instructions.
+fn detect_task_guidance(prompt: &str) -> &'static str {
+    let p = prompt.to_lowercase();
+
+    if p.contains("refactor") || p.contains("clean") || p.contains("reorganize") {
+        return "TASK: Refactoring. Preserve all functionality exactly. Only restructure code style/organization. Do not change variable names unless asked.";
+    }
+    if p.contains("bug") || p.contains("fix") || p.contains("error") || p.contains("crash") || p.contains("broken") {
+        return "TASK: Bug fix. Make the minimal targeted change to fix the described issue. Do not touch unrelated code.";
+    }
+    if p.contains("add") || p.contains("implement") || p.contains("create") || p.contains("new") {
+        return "TASK: Adding functionality. Insert new code at the correct location. Do not modify existing logic unless necessary for integration.";
+    }
+    if p.contains("remove") || p.contains("delete") || p.contains("drop") {
+        return "TASK: Removing code. Delete only what was requested. Check that removing it does not break imports or usages, and remove those too if necessary.";
+    }
+    if p.contains("rename") || p.contains("move") {
+        return "TASK: Renaming/moving. Update every occurrence of the renamed symbol throughout the file consistently.";
+    }
+    if p.contains("comment") || p.contains("document") || p.contains("docstring") || p.contains("jsdoc") {
+        return "TASK: Documentation. Add concise, accurate comments/docstrings. Do not alter any logic.";
+    }
+    if p.contains("type") || p.contains("interface") || p.contains("annotation") {
+        return "TASK: Type improvements. Add or fix type annotations without changing runtime behavior.";
+    }
+    if p.contains("test") || p.contains("spec") || p.contains("unit test") {
+        return "TASK: Test writing. Write focused, isolated tests that cover the described scenarios.";
+    }
+    if p.contains("optimize") || p.contains("performance") || p.contains("speed") || p.contains("faster") {
+        return "TASK: Performance optimization. Make targeted improvements. Preserve correctness and all edge cases.";
+    }
+    if p.contains("format") || p.contains("indent") || p.contains("style") || p.contains("lint") {
+        return "TASK: Code formatting. Apply consistent formatting. Do not change any logic or names.";
+    }
+
+    "TASK: General edit. Apply the described changes minimally and precisely."
+}
+
+/// Return language-specific best practices to guide the model.
+fn language_guidance(file_path: &str) -> &'static str {
+    let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "rs" => "LANGUAGE: Rust. Use idiomatic Rust: ownership, Result/Option types, match patterns. Avoid unwrap() in library code. Prefer ? operator.",
+        "ts" | "tsx" => "LANGUAGE: TypeScript. Maintain strict typing. Prefer interfaces over type aliases for object shapes. Avoid 'any'. Use functional React patterns with hooks.",
+        "js" | "jsx" => "LANGUAGE: JavaScript. Use modern ES2022+ syntax. Prefer const/let over var. Use arrow functions. Avoid mutation of shared state.",
+        "py" => "LANGUAGE: Python. Follow PEP8. Use type hints. Prefer list/dict comprehensions where readable. Use f-strings for formatting.",
+        "go" => "LANGUAGE: Go. Follow Go conventions: short variable names, explicit error handling, idiomatic interfaces. Never ignore errors.",
+        "java" => "LANGUAGE: Java. Follow Java conventions. Use generics appropriately. Prefer composition over inheritance.",
+        "cpp" | "cc" | "cxx" => "LANGUAGE: C++. Use modern C++17/20 features. Prefer smart pointers. Avoid raw pointers and manual memory management.",
+        "c" => "LANGUAGE: C. Be explicit about memory management. Check all return values. Avoid buffer overflows.",
+        "swift" => "LANGUAGE: Swift. Use optionals properly. Prefer value types. Follow Swift API design guidelines.",
+        "kt" | "kts" => "LANGUAGE: Kotlin. Use Kotlin idioms: data classes, extension functions, null safety operators.",
+        "css" | "scss" | "sass" => "LANGUAGE: CSS. Maintain existing class naming convention. Keep specificity low. Preserve all existing rules not being changed.",
+        "html" => "LANGUAGE: HTML. Maintain semantic structure. Keep accessibility attributes. Preserve indentation style.",
+        "json" | "toml" | "yaml" | "yml" => "LANGUAGE: Config file. Maintain exact formatting and schema structure. Validate that the result is syntactically valid.",
+        "sh" | "bash" | "zsh" => "LANGUAGE: Shell script. Quote all variable expansions. Handle errors with set -e or explicit checks.",
+        _ => "",
+    }
+}
+
+/// Analyze file structure to give the model useful context.
+fn analyze_file_context(content: &str, file_path: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let line_count = lines.len();
+
+    let ext = file_path.rsplit('.').next().unwrap_or("").to_lowercase();
+
+    let mut ctx_parts: Vec<String> = Vec::new();
+    ctx_parts.push(format!("Total lines: {}", line_count));
+
+    // Detect imports/dependencies section
+    let import_count = lines
+        .iter()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.starts_with("import ")
+                || t.starts_with("use ")
+                || t.starts_with("from ")
+                || t.starts_with("#include")
+                || t.starts_with("require(")
+        })
+        .count();
+    if import_count > 0 {
+        ctx_parts.push(format!("Imports/uses: {}", import_count));
+    }
+
+    // Detect functions/methods
+    let fn_count = match ext.as_str() {
+        "rs" => lines
+            .iter()
+            .filter(|l| {
+                let t = l.trim_start();
+                t.starts_with("pub fn ") || t.starts_with("fn ") || t.starts_with("async fn ")
+            })
+            .count(),
+        "ts" | "tsx" | "js" | "jsx" => lines
+            .iter()
+            .filter(|l| {
+                let t = l.trim_start();
+                t.contains("function ") || t.contains("=> {") || t.contains("=> (")
+            })
+            .count(),
+        "py" => lines
+            .iter()
+            .filter(|l| l.trim_start().starts_with("def ") || l.trim_start().starts_with("async def "))
+            .count(),
+        "go" => lines
+            .iter()
+            .filter(|l| l.trim_start().starts_with("func "))
+            .count(),
+        _ => 0,
+    };
+    if fn_count > 0 {
+        ctx_parts.push(format!("Functions/methods: {}", fn_count));
+    }
+
+    ctx_parts.join(", ")
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryMessage {
+    pub role: String,
+    pub content: String,
+}
 
 #[tauri::command]
 pub async fn stream_llm(
@@ -108,8 +235,8 @@ pub async fn stream_llm(
     file_content: String,
     file_path: String,
     user_prompt: String,
+    history: Option<Vec<HistoryMessage>>,
 ) -> Result<(), String> {
-    // Add line numbers so model understands the full scope of the file
     let numbered: String = file_content
         .lines()
         .enumerate()
@@ -119,27 +246,58 @@ pub async fn stream_llm(
 
     let line_count = file_content.lines().count();
 
+    // Build enhanced system prompt
+    let task_guidance = detect_task_guidance(&user_prompt);
+    let lang_guidance = language_guidance(&file_path);
+    let file_ctx = analyze_file_context(&file_content, &file_path);
+
+    let mut system_prompt = BASE_SYSTEM_PROMPT.to_string();
+
+    if !lang_guidance.is_empty() {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(lang_guidance);
+    }
+
+    system_prompt.push_str("\n\n");
+    system_prompt.push_str(task_guidance);
+
+    system_prompt.push_str(&format!(
+        "\n\nFILE CONTEXT: {}",
+        file_ctx
+    ));
+
     let user_message = format!(
-        "File: {} ({} lines)\n\nCurrent file content (with line numbers for reference — do NOT include line numbers in output):\n{}\n\n---\nInstruction: {}\n\nRemember: output the complete file ({} lines total), only modifying what the instruction asks for.",
-        file_path, line_count, numbered, user_prompt, line_count
+        "File: {} ({})\n\nCurrent file content (line numbers for reference only — do NOT include them in output):\n{}\n\n---\nInstruction: {}\n\nOutput the complete file ({} lines), modifying only what the instruction requires.",
+        file_path, file_ctx, numbered, user_prompt, line_count
     );
 
-    let messages = vec![
+    let mut messages = vec![
         ChatMessage {
             role: "system".to_string(),
-            content: SYSTEM_PROMPT.to_string(),
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: user_message,
+            content: system_prompt,
         },
     ];
+
+    // Inject conversation history so the model remembers prior edits
+    if let Some(hist) = history {
+        for msg in hist {
+            messages.push(ChatMessage {
+                role: msg.role,
+                content: msg.content,
+            });
+        }
+    }
+
+    messages.push(ChatMessage {
+        role: "user".to_string(),
+        content: user_message,
+    });
 
     let body = StreamRequest {
         model: model.clone(),
         messages,
         stream: true,
-        temperature: 0.2,
+        temperature: 0.1,
     };
 
     let url = if provider == "ollama" {
@@ -178,7 +336,6 @@ pub async fn stream_llm(
             };
 
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                // Try OpenAI format (LM Studio + Ollama /v1/)
                 let delta = val
                     .get("choices")
                     .and_then(|c| c.get(0))
@@ -186,7 +343,6 @@ pub async fn stream_llm(
                     .and_then(|d| d.get("content"))
                     .and_then(|c| c.as_str());
 
-                // Try Ollama native format
                 let ollama_content = val
                     .get("message")
                     .and_then(|m| m.get("content"))
@@ -200,7 +356,6 @@ pub async fn stream_llm(
                     }
                 }
 
-                // Check if done
                 let done = val.get("done").and_then(|d| d.as_bool()).unwrap_or(false);
                 let finish_reason = val
                     .get("choices")
@@ -215,23 +370,15 @@ pub async fn stream_llm(
         }
     }
 
-    // Clean up model output
     let clean = clean_model_output(&full_content);
     app.emit("llm-done", clean).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Remove markdown code fences AND line-number prefixes the model may have echoed back.
-/// Handles patterns like: "  19 | code" or "19| code" or "19 |code"
 fn clean_model_output(s: &str) -> String {
     let s = strip_code_fences(s);
-
-    // Detect if the output contains line-number prefixes on most lines.
-    // Pattern: optional whitespace, digits, optional whitespace, "|", optional space, rest
     let lines: Vec<&str> = s.lines().collect();
     let numbered_count = lines.iter().filter(|l| is_numbered_line(l)).count();
-
-    // If more than 40% of non-empty lines have the prefix, strip them all
     let non_empty = lines.iter().filter(|l| !l.trim().is_empty()).count();
     if non_empty > 0 && numbered_count * 100 / non_empty >= 40 {
         return lines
@@ -240,13 +387,11 @@ fn clean_model_output(s: &str) -> String {
             .collect::<Vec<_>>()
             .join("\n");
     }
-
     s
 }
 
 fn is_numbered_line(line: &str) -> bool {
     let t = line.trim_start();
-    // Match: digits followed by optional spaces and "|"
     let mut chars = t.chars().peekable();
     let mut has_digit = false;
     while let Some(&c) = chars.peek() {
@@ -260,7 +405,6 @@ fn is_numbered_line(line: &str) -> bool {
     if !has_digit {
         return false;
     }
-    // Skip optional spaces
     while chars.peek() == Some(&' ') {
         chars.next();
     }
@@ -271,22 +415,17 @@ fn strip_line_number(line: &str) -> &str {
     let t = line.trim_start();
     let mut idx = 0;
     let bytes = t.as_bytes();
-    // Skip digits
     while idx < bytes.len() && bytes[idx].is_ascii_digit() {
         idx += 1;
     }
-    // Skip spaces
     while idx < bytes.len() && bytes[idx] == b' ' {
         idx += 1;
     }
-    // Skip '|'
     if idx < bytes.len() && bytes[idx] == b'|' {
         idx += 1;
     } else {
-        // No pipe found — return original line untouched
         return line;
     }
-    // Skip one optional space after pipe
     if idx < bytes.len() && bytes[idx] == b' ' {
         idx += 1;
     }

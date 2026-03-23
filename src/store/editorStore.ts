@@ -1,11 +1,27 @@
 import { create } from "zustand";
-import { DiffHunk, Session, ChatMessage, Theme } from "../types";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { DiffHunk, Session, ChatMessage, Theme, TerminalSession, TerminalLine, PromptHistoryEntry, FileEntry } from "../types";
+
+let _lineId = 0;
+export function nextLineId() { return ++_lineId; }
+
+function makeTermSession(cwd: string, num: number): TerminalSession {
+  return { id: `t_${Date.now()}_${num}`, name: `bash ${num}`, lines: [], cwd, running: false, history: [], historyIdx: -1 };
+}
+
+const HISTORY_KEY = "locai_prompt_history";
+function loadHistory(): PromptHistoryEntry[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]"); } catch { return []; }
+}
+function saveHistory(h: PromptHistoryEntry[]) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 200)));
+}
 
 export interface OpenFile {
   path: string;
   name: string;
   content: string;
-  originalContent: string; // before AI edit
+  originalContent: string;
   language: string;
   isDirty: boolean;
 }
@@ -15,6 +31,29 @@ export type LLMProvider = "ollama" | "lmstudio";
 export interface Settings {
   ollamaUrl: string;
   lmstudioUrl: string;
+}
+
+// ── Project Tab ─────────────────────────────────────────────────
+export interface ProjectTab {
+  id: string;
+  name: string;        // display name, usually folder name
+  workspacePath: string | null;
+  openFiles: OpenFile[];
+  activeFilePath: string | null;
+  fileTree: FileEntry[];
+  terminalCwd: string;
+}
+
+function newProjectTab(num: number): ProjectTab {
+  return {
+    id: `pt_${Date.now()}_${num}`,
+    name: `Project ${num}`,
+    workspacePath: null,
+    openFiles: [],
+    activeFilePath: null,
+    fileTree: [],
+    terminalCwd: "/",
+  };
 }
 
 // ── Session helpers ───────────────────────────────────────────────
@@ -31,7 +70,7 @@ function saveSessions(sessions: Session[]) {
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
 }
 
-function newSession(): Session {
+function newSession(workspacePath?: string | null): Session {
   const now = Date.now();
   return {
     id: `s_${now}`,
@@ -39,6 +78,7 @@ function newSession(): Session {
     createdAt: now,
     updatedAt: now,
     messages: [],
+    workspacePath,
   };
 }
 
@@ -54,13 +94,35 @@ function getOrCreateActiveSession(sessions: Session[]): { sessions: Session[]; a
   return { sessions: [s], activeId: s.id };
 }
 
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface MCPServer {
+  id: string;
+  name: string;
+  url: string;
+}
+
 // ── Store ─────────────────────────────────────────────────────────
 interface EditorState {
-  // Workspace
+  // ── Project Tabs ─────────────────────────────────────────────────
+  projectTabs: ProjectTab[];
+  activeProjectTabId: string;
+  createProjectTab: () => void;
+  closeProjectTab: (id: string) => void;
+  switchProjectTab: (id: string) => void;
+  renameProjectTab: (id: string, name: string) => void;
+  // Update current tab's file tree after folder open / project create
+  setTabFileTree: (tree: FileEntry[]) => void;
+
+  // Workspace (mirrors active tab)
   workspacePath: string | null;
   setWorkspacePath: (path: string | null) => void;
 
-  // Open files
+  // Open files (mirrors active tab)
   openFiles: OpenFile[];
   activeFilePath: string | null;
   openFile: (file: Omit<OpenFile, "originalContent">) => void;
@@ -68,6 +130,9 @@ interface EditorState {
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
   markFileSaved: (path: string) => void;
+
+  // File tree (mirrors active tab)
+  fileTree: FileEntry[];
 
   // Diff state
   diffHunks: DiffHunk[];
@@ -111,17 +176,139 @@ interface EditorState {
   // Theme
   theme: Theme;
   setTheme: (t: Theme) => void;
+
+  // Terminal (multi-session)
+  terminalOpen: boolean;
+  setTerminalOpen: (v: boolean) => void;
+  terminalSessions: TerminalSession[];
+  activeTerminalId: string;
+  createTerminalSession: () => void;
+  closeTerminalSession: (id: string) => void;
+  switchTerminalSession: (id: string) => void;
+  appendTerminalLine: (sessionId: string, line: TerminalLine) => void;
+  setTerminalRunning: (sessionId: string, running: boolean) => void;
+  setTerminalCwd: (sessionId: string, cwd: string) => void;
+  pushTerminalHistory: (sessionId: string, cmd: string) => void;
+  setTerminalHistoryIdx: (sessionId: string, idx: number) => void;
+  clearTerminalLines: (sessionId: string) => void;
+  // legacy compat
+  terminalCwd: string | null;
+
+  // Activity bar / sidebar view
+  sidebarView: "files" | "git" | "search" | "history" | "skills" | "mcp";
+  setSidebarView: (v: "files" | "git" | "search" | "history" | "skills" | "mcp") => void;
+  sidebarVisible: boolean;
+  setSidebarVisible: (v: boolean) => void;
+
+  // Prompt history
+  promptHistory: PromptHistoryEntry[];
+  addPromptHistory: (entry: PromptHistoryEntry) => void;
+
+  // Skills
+  skills: Skill[];
+  addSkill: (skill: Skill) => void;
+  removeSkill: (id: string) => void;
+
+  // MCP Servers
+  mcpServers: MCPServer[];
+  addMCPServer: (server: MCPServer) => void;
+  removeMCPServer: (id: string) => void;
 }
 
+const _initialTab = newProjectTab(1);
 const { sessions: initialSessions, activeId } = getOrCreateActiveSession(loadSessions());
 saveSessions(initialSessions);
 
-export const useEditorStore = create<EditorState>((set, get) => ({
+const _initialTermSession = makeTermSession("/", 1);
+
+export const useEditorStore = create<EditorState>()(
+  persist(
+    (set, get) => ({
+  // ── Project Tabs ───────────────────────────────────────────────
+  projectTabs: [_initialTab],
+  activeProjectTabId: _initialTab.id,
+
+  createProjectTab: () => {
+    const { projectTabs } = get();
+    const tab = newProjectTab(projectTabs.length + 1);
+    set({
+      projectTabs: [...projectTabs, tab],
+      activeProjectTabId: tab.id,
+      // Switch workspace state to new empty tab
+      workspacePath: null,
+      openFiles: [],
+      activeFilePath: null,
+      fileTree: [],
+    });
+  },
+
+  closeProjectTab: (id) => {
+    const { projectTabs, activeProjectTabId } = get();
+    if (projectTabs.length === 1) return; // keep at least one
+    const remaining = projectTabs.filter(t => t.id !== id);
+    const nextTab = activeProjectTabId === id
+      ? remaining[remaining.length - 1]
+      : projectTabs.find(t => t.id === activeProjectTabId)!;
+    set({
+      projectTabs: remaining,
+      activeProjectTabId: nextTab.id,
+      workspacePath: nextTab.workspacePath,
+      openFiles: nextTab.openFiles,
+      activeFilePath: nextTab.activeFilePath,
+      fileTree: nextTab.fileTree,
+    });
+  },
+
+  switchProjectTab: (id) => {
+    const { projectTabs, activeProjectTabId } = get();
+    if (id === activeProjectTabId) return;
+    // Save current state into current tab snapshot
+    const current = get();
+    const savedTabs = projectTabs.map(t =>
+      t.id === activeProjectTabId
+        ? { ...t, workspacePath: current.workspacePath, openFiles: current.openFiles, activeFilePath: current.activeFilePath, fileTree: current.fileTree }
+        : t
+    );
+    const target = savedTabs.find(t => t.id === id)!;
+    set({
+      projectTabs: savedTabs,
+      activeProjectTabId: id,
+      workspacePath: target.workspacePath,
+      openFiles: target.openFiles,
+      activeFilePath: target.activeFilePath,
+      fileTree: target.fileTree,
+    });
+  },
+
+  renameProjectTab: (id, name) => {
+    set(s => ({ projectTabs: s.projectTabs.map(t => t.id === id ? { ...t, name } : t) }));
+  },
+
+  setTabFileTree: (tree) => {
+    const { activeProjectTabId, projectTabs } = get();
+    set({
+      fileTree: tree,
+      projectTabs: projectTabs.map(t =>
+        t.id === activeProjectTabId ? { ...t, fileTree: tree } : t
+      ),
+    });
+  },
+
   workspacePath: null,
-  setWorkspacePath: (path) => set({ workspacePath: path }),
+  setWorkspacePath: (path) => {
+    const { activeProjectTabId, projectTabs } = get();
+    const name = path ? path.split("/").pop() ?? path : "Project";
+    set({
+      workspacePath: path,
+      projectTabs: projectTabs.map(t =>
+        t.id === activeProjectTabId ? { ...t, workspacePath: path, name } : t
+      ),
+    });
+  },
 
   openFiles: [],
   activeFilePath: null,
+  fileTree: [],
 
   openFile: (file) =>
     set((s) => {
@@ -251,7 +438,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setShowSessions: (showSessions) => set({ showSessions }),
 
   createSession: () => {
-    const s = newSession();
+    const s = newSession(get().workspacePath);
     const sessions = [...get().sessions, s];
     saveSessions(sessions);
     localStorage.setItem(ACTIVE_SESSION_KEY, s.id);
@@ -261,7 +448,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   deleteSession: (id) => {
     const sessions = get().sessions.filter((s) => s.id !== id);
     if (sessions.length === 0) {
-      const s = newSession();
+      const s = newSession(get().workspacePath);
       sessions.push(s);
     }
     const activeSessionId = get().activeSessionId === id
@@ -315,4 +502,129 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     document.body.setAttribute("data-theme", theme);
     set({ theme });
   },
-}));
+
+  // Terminal (multi-session)
+  terminalOpen: false,
+  setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
+  terminalSessions: [_initialTermSession],
+  activeTerminalId: _initialTermSession.id,
+  get terminalCwd() {
+    const { terminalSessions, activeTerminalId } = get();
+    return terminalSessions.find(s => s.id === activeTerminalId)?.cwd ?? null;
+  },
+
+  createTerminalSession: () => {
+    const { terminalSessions } = get();
+    const cwd = terminalSessions[terminalSessions.length - 1]?.cwd ?? "/";
+    const num = terminalSessions.length + 1;
+    const s = makeTermSession(cwd, num);
+    set({ terminalSessions: [...terminalSessions, s], activeTerminalId: s.id });
+  },
+
+  closeTerminalSession: (id) => {
+    const { terminalSessions, activeTerminalId } = get();
+    if (terminalSessions.length === 1) return; // keep at least one
+    const remaining = terminalSessions.filter(s => s.id !== id);
+    const newActive = activeTerminalId === id
+      ? remaining[remaining.length - 1].id
+      : activeTerminalId;
+    set({ terminalSessions: remaining, activeTerminalId: newActive });
+  },
+
+  switchTerminalSession: (id) => set({ activeTerminalId: id }),
+
+  appendTerminalLine: (sessionId, line) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId ? { ...ts, lines: [...ts.lines, line] } : ts
+      ),
+    })),
+
+  setTerminalRunning: (sessionId, running) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId ? { ...ts, running } : ts
+      ),
+    })),
+
+  setTerminalCwd: (sessionId, cwd) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId ? { ...ts, cwd } : ts
+      ),
+    })),
+
+  pushTerminalHistory: (sessionId, cmd) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId
+          ? { ...ts, history: [cmd, ...ts.history.slice(0, 99)], historyIdx: -1 }
+          : ts
+      ),
+    })),
+
+  setTerminalHistoryIdx: (sessionId, idx) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId ? { ...ts, historyIdx: idx } : ts
+      ),
+    })),
+
+  clearTerminalLines: (sessionId) =>
+    set(s => ({
+      terminalSessions: s.terminalSessions.map(ts =>
+        ts.id === sessionId ? { ...ts, lines: [] } : ts
+      ),
+    })),
+
+  // Activity bar / sidebar view
+  sidebarView: "files",
+  setSidebarView: (sidebarView) => set({ sidebarView, sidebarVisible: true }),
+  sidebarVisible: true,
+  setSidebarVisible: (sidebarVisible) => set({ sidebarVisible }),
+
+  // Prompt history
+  promptHistory: loadHistory(),
+  addPromptHistory: (entry) => {
+    const updated = [entry, ...get().promptHistory];
+    saveHistory(updated);
+    set({ promptHistory: updated });
+  },
+
+  // Skills
+  skills: [],
+  addSkill: (skill) => set((s) => ({ skills: [...s.skills, skill] })),
+  removeSkill: (id) => set((s) => ({ skills: s.skills.filter((sk) => sk.id !== id) })),
+
+  // MCP Servers
+  mcpServers: [],
+  addMCPServer: (server) => set((s) => ({ mcpServers: [...s.mcpServers, server] })),
+  removeMCPServer: (id) => set((s) => ({ mcpServers: s.mcpServers.filter((mcp) => mcp.id !== id) })),
+}),
+    {
+      name: 'locai-editor-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        projectTabs: state.projectTabs.map(t => ({ // Don't persist file tree nodes directly
+          ...t,
+          fileTree: []
+        })),
+        activeProjectTabId: state.activeProjectTabId,
+        theme: state.theme,
+        settings: state.settings,
+        sidebarView: state.sidebarView,
+        sidebarVisible: state.sidebarVisible,
+      }),
+      onRehydrateStorage: () => (state) => {
+        // Run after hydration completes to sync the active tab's properties into the root properties
+        if (state && state.projectTabs.length > 0) {
+          const tab = state.projectTabs.find(t => t.id === state.activeProjectTabId) || state.projectTabs[0];
+          state.workspacePath = tab.workspacePath;
+          state.openFiles = tab.openFiles;
+          state.activeFilePath = tab.activeFilePath;
+          // Note: fileTree is empty upon hydrate and requires user to read_dir, or we could handle it via invoke later
+        }
+      }
+    }
+  )
+);

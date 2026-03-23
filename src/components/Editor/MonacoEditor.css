@@ -72,6 +72,31 @@
 .ed-tab-close:hover { color: var(--text-primary); }
 
 /* ── Diff bar ── */
+.ed-diff-sub {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.ed-hunk-lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.ed-hunk-del-line, .ed-hunk-add-line {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-hunk-del-line { color: var(--red); opacity: 0.8; }
+.ed-hunk-add-line { color: var(--green); }
+
 .ed-diff-bar {
   display: flex;
   align-items: center;
@@ -178,7 +203,57 @@
 .ed-hunk-rej:hover { background: rgba(241,76,76,0.3); }
 
 /* ── Monaco wrapper ── */
-.ed-monaco { flex: 1; overflow: hidden; min-height: 0; }
+.ed-monaco {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+
+/* ── Inline diff floating bar (inside editor) ── */
+.ed-inline-diff-bar {
+  position: absolute;
+  top: 8px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+.ed-inline-diff-count {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  padding-right: 4px;
+  border-right: 1px solid var(--border);
+}
+
+.ed-inline-accept,
+.ed-inline-reject {
+  background: none;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.ed-inline-accept {
+  color: var(--green);
+}
+.ed-inline-accept:hover { background: var(--green-dim); }
+
+.ed-inline-reject {
+  color: var(--red);
+}
+.ed-inline-reject:hover { background: var(--red-dim); }
 
 /* ── Empty ── */
 .ed-empty {

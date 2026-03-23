@@ -15,7 +15,6 @@ pub struct DiffHunk {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub enum HunkKind {
     Add,
     Remove,

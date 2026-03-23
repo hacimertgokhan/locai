@@ -1,0 +1,163 @@
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* ── Tab bar ── */
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  height: 24px;
+}
+.terminal-tabs::-webkit-scrollbar { display: none; }
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 8px;
+  height: 24px;
+  min-width: 60px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+.terminal-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.terminal-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-top: 1px solid var(--accent);
+}
+
+.terminal-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.terminal-tab-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+.terminal-tab-close:hover { color: var(--red); }
+
+.terminal-new-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 8px;
+  height: 24px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+.terminal-new-btn:hover { color: var(--accent); }
+
+/* ── Body ── */
+.terminal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-session-wrap {
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Pane ── */
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: text;
+  overflow: hidden;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px;
+  min-height: 0;
+}
+
+.terminal-line {
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.terminal-stdout { color: var(--text-primary); }
+.terminal-stderr { color: var(--red); }
+.terminal-system { color: var(--text-muted); font-style: italic; }
+.terminal-input  { color: var(--accent); }
+
+/* ── Input row ── */
+.terminal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 4px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.terminal-prompt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.terminal-cwd {
+  color: var(--accent);
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-arrow {
+  color: var(--green);
+  font-size: 11px;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  caret-color: var(--accent);
+  min-width: 0;
+}
+.terminal-input:disabled { opacity: 0.5; cursor: wait; }

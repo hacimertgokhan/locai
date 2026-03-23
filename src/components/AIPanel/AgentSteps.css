@@ -1,0 +1,97 @@
+/* ── Agent steps container ── */
+.agent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+/* ── Single step ── */
+.agent-step {
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+}
+
+.agent-step-running { border-color: var(--accent); }
+.agent-step-error   { border-color: var(--red, #e05e5e); }
+.agent-step-done    { border-color: var(--border); }
+
+.agent-step-hd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.agent-step-hd:hover { background: var(--bg-secondary); }
+
+.agent-step-icon { font-size: 12px; flex-shrink: 0; }
+
+.agent-step-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.agent-step-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.agent-step-badge-running { background: var(--accent-dim); color: var(--accent); }
+.agent-step-badge-done    { background: rgba(52, 199, 89, 0.15); color: #34c759; }
+.agent-step-badge-error   { background: rgba(224, 94, 94, 0.15); color: var(--red, #e05e5e); }
+
+.agent-step-expand { font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
+
+.agent-step-result {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* ── Thinking animation ── */
+.agent-step-thinking {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 3px;
+}
+
+.agent-thinking-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+.agent-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.agent-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes agent-pulse {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
+  40%            { opacity: 1;   transform: scale(1); }
+}
