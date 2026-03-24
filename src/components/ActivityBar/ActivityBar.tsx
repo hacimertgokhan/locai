@@ -1,4 +1,5 @@
 import { useEditorStore } from "../../store/editorStore";
+import { SystemToolbar } from "./SystemToolbar";
 import "./ActivityBar.css";
 
 type View = "files" | "git" | "search" | "history" | "skills" | "mcp";
@@ -103,6 +104,7 @@ export function ActivityBar() {
           {item.icon}
         </button>
       ))}
+      <SystemToolbar />
     </div>
   );
 }

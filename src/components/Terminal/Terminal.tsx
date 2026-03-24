@@ -29,6 +29,43 @@ function TerminalPane({ sessionId }: { sessionId: string }) {
   useEffect(() => { inputRef.current?.focus(); }, [sessionId]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [lines]);
 
+  useEffect(() => {
+    let unlistenOut: () => void;
+    let unlistenDone: () => void;
+
+    listen<{ session_id: string; text: string; stream: string }>(
+      "terminal-output",
+      (ev) => {
+        if (ev.payload.session_id !== sessionId) return;
+        appendTerminalLine(sessionId, {
+          id: nextLineId(),
+          text: ev.payload.text,
+          stream: ev.payload.stream as "stdout" | "stderr",
+        });
+      }
+    ).then((u) => { unlistenOut = u; });
+
+    listen<{ session_id: string; code: number }>(
+      "terminal-done",
+      (ev) => {
+        if (ev.payload.session_id !== sessionId) return;
+        if (ev.payload.code !== 0) {
+          appendTerminalLine(sessionId, {
+            id: nextLineId(),
+            text: `[exited ${ev.payload.code}]`,
+            stream: "system",
+          });
+        }
+        setTerminalRunning(sessionId, false);
+      }
+    ).then((u) => { unlistenDone = u; });
+
+    return () => {
+      if (unlistenOut) unlistenOut();
+      if (unlistenDone) unlistenDone();
+    };
+  }, [sessionId, appendTerminalLine, setTerminalRunning]);
+
   const runCommand = async (cmd: string) => {
     const trimmed = cmd.trim();
     if (!trimmed) return;
@@ -55,41 +92,9 @@ function TerminalPane({ sessionId }: { sessionId: string }) {
     }
 
     setTerminalRunning(sessionId, true);
-
-    const unlistenOutput = await listen<{ session_id: string; text: string; stream: string }>(
-      "terminal-output",
-      (ev) => {
-        if (ev.payload.session_id !== sessionId) return;
-        appendTerminalLine(sessionId, {
-          id: nextLineId(),
-          text: ev.payload.text,
-          stream: ev.payload.stream as "stdout" | "stderr",
-        });
-      }
-    );
-
-    const unlistenDone = await listen<{ session_id: string; code: number }>(
-      "terminal-done",
-      (ev) => {
-        if (ev.payload.session_id !== sessionId) return;
-        unlistenOutput();
-        unlistenDone();
-        if (ev.payload.code !== 0) {
-          appendTerminalLine(sessionId, {
-            id: nextLineId(),
-            text: `[exited ${ev.payload.code}]`,
-            stream: "system",
-          });
-        }
-        setTerminalRunning(sessionId, false);
-      }
-    );
-
     try {
       await invoke("run_terminal_command", { sessionId, cmd: trimmed, cwd });
     } catch (e: any) {
-      unlistenOutput();
-      unlistenDone();
       appendTerminalLine(sessionId, { id: nextLineId(), text: `Error: ${e}`, stream: "stderr" });
       setTerminalRunning(sessionId, false);
     }

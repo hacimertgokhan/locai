@@ -3,7 +3,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import type * as MonacoType from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "../../store/editorStore";
-import { DiffHunk } from "../../types";
+import { DiffHunk, AgentMessage, LlmStepResult } from "../../types";
 import "./MonacoEditor.css";
 
 const MONACO_THEMES = {
@@ -48,6 +48,63 @@ const MONACO_THEMES = {
   },
 };
 
+function EditorToolbar({ editor, activeFile }: { editor: MonacoType.editor.IStandaloneCodeEditor | null, activeFile: any }) {
+  const dispatchAITask = useEditorStore(s => s.dispatchAITask);
+
+  if (!activeFile) return null;
+
+  const getSelectionOrFile = () => {
+    if (!editor) return "";
+    const selection = editor.getSelection();
+    if (selection && !selection.isEmpty()) {
+      return editor.getModel()?.getValueInRange(selection) || "";
+    }
+    return editor.getValue();
+  };
+
+  const handleAIExplain = () => {
+    const text = getSelectionOrFile();
+    if (!text) return;
+    dispatchAITask(`Please explain the following code from \`${activeFile.name}\`:\n\`\`\`${activeFile.language}\n${text}\n\`\`\``);
+  };
+
+  const handleAIRefactor = () => {
+    const text = getSelectionOrFile();
+    if (!text) return;
+    dispatchAITask(`Please refactor and improve this code from \`${activeFile.name}\`:\n\`\`\`${activeFile.language}\n${text}\n\`\`\``);
+  };
+
+  const handleFormat = () => {
+    if (!editor) return;
+    editor.getAction('editor.action.formatDocument')?.run();
+  };
+
+  const handleToggleWrap = () => {
+    if (!editor) return;
+    const current = editor.getRawOptions().wordWrap;
+    editor.updateOptions({ wordWrap: current === "on" ? "off" : "on" });
+  };
+
+  return (
+    <div className="ed-toolbar">
+      <div className="ed-toolbar-left">
+        <span className="ed-toolbar-lang">{activeFile.language}</span>
+      </div>
+      <div className="ed-toolbar-right">
+        <button className="ed-t-btn" onClick={handleFormat} title="Format Document (Shift+Alt+F)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
+        </button>
+        <button className="ed-t-btn" onClick={handleToggleWrap} title="Toggle Word Wrap (Alt+Z)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+        </button>
+        <div className="ed-t-sep"></div>
+        <button className="ed-t-ai" onClick={handleAIExplain}>✨ Explain</button>
+        <button className="ed-t-ai" onClick={handleAIRefactor}>✨ Refactor</button>
+      </div>
+    </div>
+  );
+}
+
 export function MonacoEditorPanel() {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -68,6 +125,9 @@ export function MonacoEditorPanel() {
   const acceptAll = useEditorStore((s) => s.acceptAll);
   const rejectAll = useEditorStore((s) => s.rejectAll);
   const theme = useEditorStore((s) => s.theme);
+  const settings = useEditorStore((s) => s.settings);
+  const provider = useEditorStore((s) => s.provider);
+  const selectedModel = useEditorStore((s) => s.selectedModel);
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
 
   const clearDiffDecorations = useCallback(() => {
@@ -243,6 +303,101 @@ export function MonacoEditorPanel() {
     monacoRef.current.editor.setTheme(`locai-${theme}`);
   }, [theme, editorReady]);
 
+  // ── AI Inline Completions ──────────────────────────────────────
+  useEffect(() => {
+    if (!monacoRef.current || !editorReady || !selectedModel) return;
+    const monaco = monacoRef.current;
+
+    const disposable = monaco.languages.registerInlineCompletionsProvider("*", {
+      provideInlineCompletions: async (model: MonacoType.editor.ITextModel, position: MonacoType.Position, _context: MonacoType.languages.InlineCompletionContext, token: MonacoType.CancellationToken) => {
+        // Debounce
+        await new Promise((res) => setTimeout(res, 500));
+        if (token.isCancellationRequested) return { items: [] };
+
+        const prefix = model.getValueInRange({
+          startLineNumber: Math.max(1, position.lineNumber - 30),
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column
+        });
+        const suffix = model.getValueInRange({
+          startLineNumber: position.lineNumber,
+          startColumn: position.column,
+          endLineNumber: Math.min(model.getLineCount(), position.lineNumber + 30),
+          endColumn: model.getLineMaxColumn(Math.min(model.getLineCount(), position.lineNumber + 30))
+        });
+
+        if (prefix.trim().length < 5) return { items: [] };
+
+        const baseUrl = provider === "ollama" ? settings.ollamaUrl : settings.lmstudioUrl;
+        const prompt = `<PREFIX>\n${prefix}\n</PREFIX>\n<CURSOR>\n<SUFFIX>\n${suffix}\n</SUFFIX>`;
+        const msgs: AgentMessage[] = [
+          { role: "system", content: "You are an inline code autocomplete engine. Output ONLY the code that should be inserted exactly at <CURSOR>. No explanations, no markdown blocks." },
+          { role: "user", content: prompt }
+        ];
+
+        try {
+          const res = await invoke<LlmStepResult>("call_llm_step", {
+            provider, baseUrl, model: selectedModel, messages: msgs, tools: []
+          });
+          if (token.isCancellationRequested) return { items: [] };
+
+          if (res.type === "content" && res.content) {
+            let text = res.content;
+            if (text.startsWith("```")) {
+              const lines = text.split("\\n");
+              lines.shift();
+              if (lines[lines.length - 1] === "```") lines.pop();
+              text = lines.join("\\n");
+            }
+            if (text.trim().length === 0) return { items: [] };
+
+            return {
+              items: [{
+                insertText: text,
+                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+              }]
+            };
+          }
+        } catch { }
+
+        return { items: [] };
+      },
+      freeInlineCompletions() {}
+    });
+
+    const codeLensDisposable = monaco.languages.registerCodeLensProvider(["javascript", "typescript", "typescriptreact"], {
+      provideCodeLenses: function (model: MonacoType.editor.ITextModel, _token: any) {
+        const lenses: MonacoType.languages.CodeLens[] = [];
+        const regex = /(app|router)\.(get|post|put|delete|patch)\s*\(/g;
+        const text = model.getValue();
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          const pos = model.getPositionAt(match.index);
+          lenses.push({
+            range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+            id: `test-endpoint-${pos.lineNumber}`,
+            command: {
+              id: "test-endpoint-action",
+              title: "▶ Test Endpoint",
+              tooltip: "Mock an API request to this endpoint",
+              arguments: [pos.lineNumber]
+            }
+          });
+        }
+        return { lenses, dispose: () => {} };
+      },
+      resolveCodeLens: function (_model: any, codeLens: any, _token: any) {
+        return codeLens;
+      }
+    });
+
+    return () => {
+      disposable.dispose();
+      codeLensDisposable.dispose();
+    };
+  }, [editorReady, provider, selectedModel, settings.ollamaUrl, settings.lmstudioUrl]);
+
   const handleMount = (editor: MonacoType.editor.IStandaloneCodeEditor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -272,6 +427,38 @@ export function MonacoEditorPanel() {
     monaco.languages.typescript.javascriptDefaults.setCompilerOptions(tsCompilerOpts);
     monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false });
+
+    editor.addAction({
+      id: "test-endpoint-action",
+      label: "Test Endpoint",
+      run: async function(ed: any, args: any) {
+        try {
+          const model = ed.getModel();
+          const lineNum = Array.isArray(args) ? args[0] : args;
+          const lineContent = model.getLineContent(lineNum).trim();
+          
+          let method = "GET";
+          if (lineContent.includes(".post(")) method = "POST";
+          else if (lineContent.includes(".put(")) method = "PUT";
+          else if (lineContent.includes(".delete(")) method = "DELETE";
+          else if (lineContent.includes(".patch(")) method = "PATCH";
+
+          const routeMatch = lineContent.match(/['"\`](.*?)['"\`]/);
+          const route = routeMatch ? routeMatch[1] : "/";
+
+          const curlCmd = `curl -X ${method} http://localhost:3000${route.startsWith("/") ? route : "/" + route}`;
+          
+          useEditorStore.getState().executeTerminalCommand(curlCmd);
+          
+          import("@tauri-apps/plugin-dialog").then(({ message }) => {
+            message(`Executed: ${curlCmd}\n\nCheck the Terminal panel for the result.`, { title: "Test Endpoint", kind: "info" });
+          }).catch(() => {});
+        } catch (e) {
+          console.error("Endpoint testing error:", e);
+        }
+      }
+    });
+
     setEditorReady(true);
   };
 
@@ -306,45 +493,66 @@ export function MonacoEditorPanel() {
       </div>
 
       {activeFile && (
-        <div className="ed-monaco">
-          {isDiffMode && diffHunks.length > 0 && (
-            <div className="ed-inline-diff-bar animate-slide-up">
-              <span className="ed-inline-diff-count">
-                {diffHunks.length} change{diffHunks.length !== 1 ? "s" : ""}
-              </span>
-              <button className="ed-inline-accept" onClick={acceptAll}>✓ Accept all</button>
-              <button className="ed-inline-reject" onClick={rejectAll}>✗ Reject all</button>
-            </div>
-          )}
-          <Editor
-            height="100%"
-            language={activeFile.language}
-            value={activeFile.content}
-            theme={`locai-${theme}`}
-            onMount={handleMount}
-            onChange={(val) => { if (val !== undefined) updateFileContent(activeFile.path, val); }}
-            options={{
-              fontSize: 13,
-              fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace",
-              fontLigatures: true,
-              lineHeight: 19,
-              minimap: { enabled: true },
-              scrollBeyondLastLine: false,
-              wordWrap: "off",
-              automaticLayout: true,
-              tabSize: 2,
-              renderWhitespace: "selection",
-              smoothScrolling: true,
-              cursorBlinking: "smooth",
-              bracketPairColorization: { enabled: true },
-              renderLineHighlight: "line",
-              lineNumbers: "on",
-              glyphMargin: true,
-              folding: true,
-              padding: { top: 8 },
-              scrollbar: { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
-            }}
-          />
+        <div className="ed-monaco-wrapper">
+          <EditorToolbar editor={editorRef.current} activeFile={activeFile} />
+          <div className="ed-monaco">
+            {isDiffMode && diffHunks.length > 0 && (
+              <div className="ed-inline-diff-bar animate-slide-up">
+                <span className="ed-inline-diff-count">
+                  {diffHunks.length} change{diffHunks.length !== 1 ? "s" : ""}
+                </span>
+                <button className="ed-inline-accept" onClick={acceptAll}>✓ Accept all</button>
+                <button className="ed-inline-reject" onClick={rejectAll}>✗ Reject all</button>
+              </div>
+            )}
+            <Editor
+              height="100%"
+              language={activeFile.language}
+              value={activeFile.content}
+              theme={`locai-${theme}`}
+              onMount={handleMount}
+              onChange={(val) => { if (val !== undefined) updateFileContent(activeFile.path, val); }}
+              options={{
+                fontSize: settings.fontSize,
+                fontFamily: `"${settings.fontFamily}", 'JetBrains Mono', monospace`,
+                fontLigatures: true,
+                lineHeight: 19,
+                minimap: { enabled: true },
+                scrollBeyondLastLine: false,
+                wordWrap: "off",
+                automaticLayout: true,
+                tabSize: 2,
+                renderWhitespace: "selection",
+                smoothScrolling: true,
+                cursorBlinking: "smooth",
+                bracketPairColorization: { enabled: true },
+                renderLineHighlight: "line",
+                lineNumbers: "on",
+                glyphMargin: true,
+                folding: true,
+                codeLens: true,
+                padding: { top: 8 },
+                scrollbar: { verticalScrollbarSize: 4, horizontalScrollbarSize: 4 },
+                
+                // Advanced Syntax & Snippet Support
+                quickSuggestions: { other: true, comments: false, strings: true },
+                suggestOnTriggerCharacters: true,
+                acceptSuggestionOnEnter: "smart",
+                acceptSuggestionOnCommitCharacter: true,
+                snippetSuggestions: "inline",
+                parameterHints: { enabled: true },
+                suggest: { 
+                  showSnippets: true, 
+                  showKeywords: true, 
+                  showClasses: true, 
+                  showVariables: true, 
+                  showFunctions: true 
+                },
+                formatOnPaste: true,
+                formatOnType: true,
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

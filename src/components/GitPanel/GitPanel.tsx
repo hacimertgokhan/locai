@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "../../store/editorStore";
-import { GitBranch, GitCommit, GitStatusEntry } from "../../types";
+import { GitBranch, GitCommit, GitStatusEntry, AgentMessage, LlmStepResult } from "../../types";
 import "./GitPanel.css";
 
 type GitTab = "changes" | "log";
@@ -46,6 +46,10 @@ export function GitPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showBranches, setShowBranches] = useState(false);
+  
+  const provider = useEditorStore(s => s.provider);
+  const settings = useEditorStore(s => s.settings);
+  const selectedModel = useEditorStore(s => s.selectedModel);
 
   const repoPath = workspacePath ?? "";
 
@@ -139,10 +143,78 @@ export function GitPanel() {
     }
   };
 
+  const handleStash = async () => {
+    try {
+      await invoke("git_stash", { path: repoPath });
+      refresh();
+    } catch (e: any) { setError(String(e)); }
+  };
+
+  const handleStashPop = async () => {
+    try {
+      await invoke("git_stash_pop", { path: repoPath });
+      refresh();
+    } catch (e: any) { setError(String(e)); }
+  };
+
+  const handleAutoCommit = async () => {
+    if (!repoPath || staged.length === 0) return;
+    try {
+      setCommitMsg("Generating...");
+      const diff = await invoke<string>("git_diff_staged", { path: repoPath });
+      const baseUrl = provider === "ollama" ? settings.ollamaUrl : settings.lmstudioUrl;
+      const msgs: AgentMessage[] = [
+        { role: "system", content: "You are an expert developer. Create a concise, conventional git commit message for the following diff (e.g. `feat: added auto commit`). Only output the raw commit message. Do not wrap in quotes or code blocks." },
+        { role: "user", content: diff.slice(0, 15000) }
+      ];
+      const result = await invoke<LlmStepResult>("call_llm_step", {
+        provider, baseUrl, model: selectedModel, messages: msgs, tools: []
+      });
+      if (result.type === "content") {
+        let msg = result.content ?? "";
+        msg = msg.replace(/^```[\w]*\n?/g, "").replace(/```$/g, "").trim();
+        msg = msg.replace(/^"|"$/g, "").trim();
+        setCommitMsg(msg);
+      }
+    } catch (e: any) {
+      setError(String(e));
+      setCommitMsg("");
+    }
+  };
+
+  const handleInit = async () => {
+    try {
+      setLoading(true);
+      await invoke("agent_run_command", { cwd: repoPath, command: "git init" });
+      await refresh();
+    } catch (e: any) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!repoPath) {
     return (
       <div className="git-empty">
         <span>Open a workspace folder to use Git.</span>
+      </div>
+    );
+  }
+
+  const isMissingRepo = error && (
+    error.toLowerCase().includes("not a git repository") || 
+    error.toLowerCase().includes("could not find repository") ||
+    error.toLowerCase().includes("repository not found")
+  );
+
+  if (isMissingRepo) {
+    return (
+      <div className="git-empty" style={{ flexDirection: "column", gap: "12px" }}>
+        <span>Not a git repository.</span>
+        <button className="git-commit-btn" onClick={handleInit} disabled={loading} style={{ width: "auto", padding: "6px 16px" }}>
+          {loading ? "Initializing..." : "Initialize Repository"}
+        </button>
       </div>
     );
   }
@@ -170,6 +242,10 @@ export function GitPanel() {
             <path fillRule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
           </svg>
         </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+          <button className="git-refresh-btn" onClick={handleStash} title="Stash Changes" style={{ padding: "0 8px", width: "auto" }}>Stash</button>
+          <button className="git-refresh-btn" onClick={handleStashPop} title="Pop Stash" style={{ padding: "0 8px", width: "auto" }}>Pop</button>
+        </div>
       </div>
 
       {/* Branch dropdown */}
@@ -272,6 +348,18 @@ export function GitPanel() {
           {/* Commit */}
           {staged.length > 0 && (
             <div className="git-commit-area">
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Message:</span>
+                <button
+                  className="git-refresh-btn"
+                  onClick={handleAutoCommit}
+                  disabled={!selectedModel || commitMsg === "Generating..."}
+                  title={selectedModel ? "Generate commit message with AI" : "Select an AI model in Settings first"}
+                  style={{ padding: "2px 8px", width: "auto", fontSize: 11, background: "var(--bg-lighter)" }}
+                >
+                  ✨ Auto
+                </button>
+              </div>
               <textarea
                 className="git-commit-msg"
                 placeholder="Commit message…"

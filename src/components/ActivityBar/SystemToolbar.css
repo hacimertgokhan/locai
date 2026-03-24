@@ -1,0 +1,94 @@
+.sys-media-popup {
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease-out;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(30, 30, 30, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Album Art styling inside popup */
+.sys-media-art {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #f472b6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+
+.sys-media-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.sys-media-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--accent);
+  transform: scale(1.1);
+}
+
+.sys-media-play {
+  background: var(--text-primary);
+  color: #111;
+  border-radius: 50%;
+  padding: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+.sys-media-play:hover {
+  background: #fff;
+  color: #000;
+  transform: scale(1.15);
+}
+
+.sys-media-trigger {
+  opacity: 0.7;
+  transition: all 0.2s;
+}
+
+.sys-media-trigger:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  color: var(--accent) !important;
+}
+
+/* Animated Equalizer */
+.equalizer {
+  display: flex;
+  align-items: flex-end;
+  height: 12px;
+  gap: 2px;
+}
+
+.eq-bar {
+  width: 3px;
+  background-color: var(--accent);
+  border-radius: 1px;
+  animation: eq-bounce 1s infinite ease-in-out;
+}
+
+.eq-bar:nth-child(1) { animation-delay: -0.2s; height: 60%; }
+.eq-bar:nth-child(2) { animation-delay: -0.4s; height: 100%; }
+.eq-bar:nth-child(3) { animation-delay: 0s; height: 80%; }
+
+.eq-paused .eq-bar {
+  animation: none;
+  height: 20%;
+}
+
+@keyframes eq-bounce {
+  0%, 100% { height: 30%; }
+  50% { height: 100%; }
+}

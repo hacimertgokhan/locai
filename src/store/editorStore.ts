@@ -31,6 +31,16 @@ export type LLMProvider = "ollama" | "lmstudio";
 export interface Settings {
   ollamaUrl: string;
   lmstudioUrl: string;
+  fontFamily: string;
+  fontSize: number;
+}
+
+export type ProjectType = "frontend" | "backend" | "unknown";
+
+export interface ProjectInfo {
+  type: ProjectType;
+  framework?: "react" | "next" | "express" | "vite" | "vue";
+  port?: number;
 }
 
 // ── Project Tab ─────────────────────────────────────────────────
@@ -42,6 +52,7 @@ export interface ProjectTab {
   activeFilePath: string | null;
   fileTree: FileEntry[];
   terminalCwd: string;
+  projectInfo: ProjectInfo;
 }
 
 function newProjectTab(num: number): ProjectTab {
@@ -53,6 +64,7 @@ function newProjectTab(num: number): ProjectTab {
     activeFilePath: null,
     fileTree: [],
     terminalCwd: "/",
+    projectInfo: { type: "unknown" },
   };
 }
 
@@ -133,6 +145,10 @@ interface EditorState {
 
   // File tree (mirrors active tab)
   fileTree: FileEntry[];
+  
+  // Project info for active tab
+  projectInfo: ProjectInfo;
+  setProjectInfo: (info: ProjectInfo) => void;
 
   // Diff state
   diffHunks: DiffHunk[];
@@ -154,6 +170,11 @@ interface EditorState {
   streamBuffer: string;
   appendStream: (chunk: string) => void;
   clearStream: () => void;
+
+  // Global AI Task Dispatcher
+  pendingAITask: string | null;
+  dispatchAITask: (prompt: string) => void;
+  clearAITask: () => void;
 
   // Sessions
   sessions: Session[];
@@ -191,6 +212,7 @@ interface EditorState {
   pushTerminalHistory: (sessionId: string, cmd: string) => void;
   setTerminalHistoryIdx: (sessionId: string, idx: number) => void;
   clearTerminalLines: (sessionId: string) => void;
+  executeTerminalCommand: (cmd: string) => void;
   // legacy compat
   terminalCwd: string | null;
 
@@ -199,6 +221,9 @@ interface EditorState {
   setSidebarView: (v: "files" | "git" | "search" | "history" | "skills" | "mcp") => void;
   sidebarVisible: boolean;
   setSidebarVisible: (v: boolean) => void;
+
+  aiPanelMode: "pinned" | "floating";
+  setAiPanelMode: (m: "pinned" | "floating") => void;
 
   // Prompt history
   promptHistory: PromptHistoryEntry[];
@@ -239,6 +264,7 @@ export const useEditorStore = create<EditorState>()(
       openFiles: [],
       activeFilePath: null,
       fileTree: [],
+      projectInfo: { type: "unknown" },
     });
   },
 
@@ -256,6 +282,7 @@ export const useEditorStore = create<EditorState>()(
       openFiles: nextTab.openFiles,
       activeFilePath: nextTab.activeFilePath,
       fileTree: nextTab.fileTree,
+      projectInfo: nextTab.projectInfo,
     });
   },
 
@@ -266,7 +293,7 @@ export const useEditorStore = create<EditorState>()(
     const current = get();
     const savedTabs = projectTabs.map(t =>
       t.id === activeProjectTabId
-        ? { ...t, workspacePath: current.workspacePath, openFiles: current.openFiles, activeFilePath: current.activeFilePath, fileTree: current.fileTree }
+        ? { ...t, workspacePath: current.workspacePath, openFiles: current.openFiles, activeFilePath: current.activeFilePath, fileTree: current.fileTree, projectInfo: current.projectInfo }
         : t
     );
     const target = savedTabs.find(t => t.id === id)!;
@@ -277,6 +304,7 @@ export const useEditorStore = create<EditorState>()(
       openFiles: target.openFiles,
       activeFilePath: target.activeFilePath,
       fileTree: target.fileTree,
+      projectInfo: target.projectInfo,
     });
   },
 
@@ -295,16 +323,20 @@ export const useEditorStore = create<EditorState>()(
   },
 
   workspacePath: null,
-  setWorkspacePath: (path) => {
-    const { activeProjectTabId, projectTabs } = get();
-    const name = path ? path.split("/").pop() ?? path : "Project";
-    set({
-      workspacePath: path,
-      projectTabs: projectTabs.map(t =>
-        t.id === activeProjectTabId ? { ...t, workspacePath: path, name } : t
-      ),
-    });
-  },
+  setWorkspacePath: (path) => set((s) => ({
+    workspacePath: path,
+    projectTabs: s.projectTabs.map(t =>
+      t.id === s.activeProjectTabId ? { ...t, workspacePath: path, name: path ? path.split("/").pop() ?? path : "Project" } : t
+    ),
+  })),
+
+  projectInfo: { type: "unknown" },
+  setProjectInfo: (info) => set((s) => ({
+    projectInfo: info,
+    projectTabs: s.projectTabs.map(t =>
+      t.id === s.activeProjectTabId ? { ...t, projectInfo: info } : t
+    ),
+  })),
 
   openFiles: [],
   activeFilePath: null,
@@ -431,6 +463,13 @@ export const useEditorStore = create<EditorState>()(
   appendStream: (chunk) => set((s) => ({ streamBuffer: s.streamBuffer + chunk })),
   clearStream: () => set({ streamBuffer: "" }),
 
+  // Global AI Task Dispatcher
+  pendingAITask: null,
+  dispatchAITask: (prompt) => {
+    set({ pendingAITask: prompt, aiPanelMode: "pinned" }); // ensure panel is visible
+  },
+  clearAITask: () => set({ pendingAITask: null }),
+
   // Sessions
   sessions: initialSessions,
   activeSessionId: activeId,
@@ -490,6 +529,8 @@ export const useEditorStore = create<EditorState>()(
   settings: {
     ollamaUrl: "http://localhost:11434",
     lmstudioUrl: "http://localhost:1234",
+    fontFamily: "Outfit",
+    fontSize: 14,
   },
   updateSettings: (s) => set((state) => ({ settings: { ...state.settings, ...s } })),
   showSettings: false,
@@ -577,11 +618,50 @@ export const useEditorStore = create<EditorState>()(
       ),
     })),
 
+  executeTerminalCommand: (cmd) => {
+    let { terminalSessions, activeTerminalId, workspacePath } = get();
+    set({ terminalOpen: true });
+    
+    if (terminalSessions.length === 0) {
+      get().createTerminalSession();
+      const updated = get();
+      terminalSessions = updated.terminalSessions;
+      activeTerminalId = updated.activeTerminalId;
+    }
+    
+    if (!activeTerminalId && terminalSessions.length > 0) {
+      activeTerminalId = terminalSessions[0].id;
+      set({ activeTerminalId });
+    }
+
+    const sessionId = activeTerminalId;
+    if (sessionId) {
+      const cwd = get().terminalCwd || workspacePath || "/";
+      get().pushTerminalHistory(sessionId, cmd);
+      get().appendTerminalLine(sessionId, { id: nextLineId(), text: `$ ${cmd}`, stream: "input" });
+      get().setTerminalRunning(sessionId, true);
+      
+      // We invoke it but don't await because we want the terminal to naturally receive the output 
+      // via events. Errors firing the command will be caught and appended as system/stderr lines.
+      // (invoke is available globally if imported, but we don't have invoke imported here...)
+      // Wait, we need invoke from @tauri-apps/api/core. I will import it.
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("run_terminal_command", { sessionId, cmd, cwd }).catch((e: any) => {
+          get().appendTerminalLine(sessionId, { id: nextLineId(), text: `Error: ${e}`, stream: "stderr" });
+          get().setTerminalRunning(sessionId, false);
+        });
+      });
+    }
+  },
+
   // Activity bar / sidebar view
   sidebarView: "files",
-  setSidebarView: (sidebarView) => set({ sidebarView, sidebarVisible: true }),
+  setSidebarView: (v) => set({ sidebarView: v }),
   sidebarVisible: true,
-  setSidebarVisible: (sidebarVisible) => set({ sidebarVisible }),
+  setSidebarVisible: (v) => set({ sidebarVisible: v }),
+
+  aiPanelMode: "pinned",
+  setAiPanelMode: (m) => set({ aiPanelMode: m }),
 
   // Prompt history
   promptHistory: loadHistory(),
@@ -612,6 +692,8 @@ export const useEditorStore = create<EditorState>()(
         activeProjectTabId: state.activeProjectTabId,
         theme: state.theme,
         settings: state.settings,
+        provider: state.provider,
+        selectedModel: state.selectedModel,
         sidebarView: state.sidebarView,
         sidebarVisible: state.sidebarVisible,
       }),

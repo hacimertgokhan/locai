@@ -5,13 +5,104 @@
   z-index: 1000;
 }
 
-.s-modal {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  width: 420px;
+.s-modal.modern-s-modal {
+  width: 600px;
   max-width: 90vw;
+  height: 450px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.s-content-wrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.s-sidebar {
+  width: 160px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.s-tab-btn {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.s-tab-btn:hover {
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.s-tab-btn.active {
+  background: var(--border);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.s-body { 
+  padding: 24px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 20px; 
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.s-theme-cards {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.s-theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.s-theme-card:hover {
+  background: var(--bg-hover);
+}
+
+.s-theme-card.active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.theme-preview {
+  width: 64px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.theme-preview.theme-dark { background: #1e1e1e; }
+.theme-preview.theme-grey { background: #2d2d2d; }
+.theme-preview.theme-light { background: #fdfdfd; border-color: #e5e5e5; }
+
+
 
 .s-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -28,7 +119,6 @@
 }
 .s-close:hover { color: var(--text-primary); }
 
-.s-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 
 .s-section { display: flex; flex-direction: column; gap: 5px; }
 

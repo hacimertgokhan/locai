@@ -4,3 +4,4 @@ pub mod file;
 pub mod git;
 pub mod llm;
 pub mod terminal;
+pub mod system;

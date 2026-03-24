@@ -48,8 +48,8 @@ export function ProjectTabBar() {
 
   return (
     <div className="project-tab-bar">
-      <div style={{ display: "flex", alignItems: "center", padding: "0 10px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
-        <img src="/icon.png" alt="locai" style={{ height: 16, width: "auto", objectFit: "contain", borderRadius: 2 }} />
+      <div style={{ display: "flex", alignItems: "center", padding: "0 12px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
+        <img src="/icon.png" alt="locai" style={{ height: 26, width: "auto", objectFit: "contain", borderRadius: 4 }} />
       </div>
       <div className="project-tabs-scroll">
         {projectTabs.map((tab) => (

@@ -243,3 +243,43 @@ pub fn git_current_branch(path: String) -> Result<String, String> {
     let head = repo.head().map_err(|e| e.to_string())?;
     Ok(head.shorthand().unwrap_or("HEAD").to_string())
 }
+
+#[tauri::command]
+pub fn git_stash(path: String) -> Result<(), String> {
+    let mut repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let sig = repo.signature().unwrap_or_else(|_| git2::Signature::now("locai", "locai@localhost").unwrap());
+    repo.stash_save(&sig, "Stashed by locai", Some(git2::StashFlags::DEFAULT)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stash_pop(path: String) -> Result<(), String> {
+    let mut repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let mut opts = git2::StashApplyOptions::new();
+    repo.stash_pop(0, Some(&mut opts)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_diff_staged(path: String) -> Result<String, String> {
+    let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    
+    let diff = repo.diff_tree_to_index(head.as_ref(), Some(&index), None).map_err(|e| e.to_string())?;
+    
+    let mut result = String::new();
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let prefix = match line.origin_value() {
+            git2::DiffLineType::Addition => "+",
+            git2::DiffLineType::Deletion => "-",
+            git2::DiffLineType::Context => " ",
+            _ => "",
+        };
+        result.push_str(prefix);
+        result.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
+        true
+    }).map_err(|e| e.to_string())?;
+    
+    Ok(result)
+}

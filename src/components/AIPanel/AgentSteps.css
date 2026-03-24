@@ -21,13 +21,14 @@
 .agent-step-hd {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   width: 100%;
   background: none;
   border: none;
   color: var(--text-primary);
   font-size: 11px;
-  padding: 4px 8px;
+  padding: 8px 10px;
   cursor: pointer;
   text-align: left;
 }

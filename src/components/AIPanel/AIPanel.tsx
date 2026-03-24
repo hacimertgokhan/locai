@@ -5,12 +5,13 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ModelSelector } from "./ModelSelector";
 import { AgentStepList } from "./AgentSteps";
 import { useEditorStore } from "../../store/editorStore";
-import { AgentMessage, AgentStep, AgentToolCall, DiffHunk, FileEntry, LlmStepResult, SearchMatch, Theme } from "../../types";
+import { AgentMessage, AgentStep, AgentToolCall, DiffHunk, FileEntry, LlmStepResult, SearchMatch } from "../../types";
 import "./AIPanel.css";
 
 // ── File path detection ───────────────────────────────────────────
 // Matches: ./app/page.tsx  app/page.tsx  components/Foo.tsx  etc.
 const FILE_PATTERN = /(?:^|[\s"'`(,])(\.{0,2}\/[^\s"'`),]+\.[a-zA-Z]{1,10}|[a-zA-Z0-9_\-]+(?:\/[a-zA-Z0-9_\-.]+)+\.[a-zA-Z]{1,10})(?:$|[\s"'`),])/g;
+const MENTION_PATTERN = /@([a-zA-Z0-9_\-./]+)/g;
 
 function detectFilePaths(text: string): string[] {
   const found = new Set<string>();
@@ -18,19 +19,35 @@ function detectFilePaths(text: string): string[] {
   FILE_PATTERN.lastIndex = 0;
   while ((m = FILE_PATTERN.exec(text)) !== null) {
     let p = m[1];
-    // Normalize: strip leading ./
     if (p.startsWith("./")) p = p.slice(2);
-    // Skip parent traversals and very short matches
     if (!p || p.startsWith("..") || !p.includes(".") || p.length < 4) continue;
     found.add(p);
   }
+  
+  MENTION_PATTERN.lastIndex = 0;
+  while ((m = MENTION_PATTERN.exec(text)) !== null) {
+    if (m[1] && m[1].length > 0) found.add(m[1]);
+  }
   return Array.from(found);
+}
+
+function findNodeInTree(nodes: FileEntry[], query: string): string | null {
+  for (const n of nodes) {
+    if (n.path.endsWith(query) || n.name === query) {
+      if (!n.isDir) return n.path;
+    }
+    if (n.children && n.children.length > 0) {
+      const found = findNodeInTree(n.children, query);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // AGENT_TOOLS is no longer sent to the API (local models often ignore them).
 // Instead we embed the tool protocol in the system prompt and parse XML responses.
 // This ensures compatibility with all local LLMs (Ollama, LM Studio, etc.)
-const TOOL_NAMES = ["read_file", "write_file", "delete_file", "rename_file", "create_directory", "run_command", "search_files"];
+const TOOL_NAMES = ["read_file", "write_file", "delete_file", "rename_file", "create_directory", "run_command", "run_terminal_command", "search_files"];
 
 // ── Agent system prompt — XML tool protocol ────────────────────────
 function buildAgentSystemPrompt(workspacePath: string, isBootstrap = false): string {
@@ -43,6 +60,7 @@ Available tools — call them using this EXACT XML format:
 <TOOL name="rename_file">{"from": "old/path", "to": "new/path"}</TOOL>
 <TOOL name="create_directory">{"path": "some/dir"}</TOOL>
 <TOOL name="run_command">{"command": "npm install"}</TOOL>
+<TOOL name="run_terminal_command">{"command": "npm install"}</TOOL>
 <TOOL name="search_files">{"query": "some text", "case_sensitive": false}</TOOL>
 
 RULES:
@@ -153,6 +171,10 @@ async function executeToolCall(
           command: args.command as string,
         });
 
+      case "run_terminal_command":
+        useEditorStore.getState().executeTerminalCommand(args.command as string);
+        return "Command started in the terminal panel.";
+
       case "search_files": {
         const matches = await invoke<SearchMatch[]>("search_in_files", {
           root: workspacePath,
@@ -235,6 +257,44 @@ function MessageBubble({
     }
   };
 
+  const renderContentWithThink = (raw: string) => {
+    if (!raw.includes("<think>")) return raw;
+    const parts = [];
+    let remaining = raw;
+    let keyIdx = 0;
+    while (remaining.length > 0) {
+      const startIdx = remaining.indexOf("<think>");
+      if (startIdx === -1) {
+        parts.push(<span key={keyIdx++}>{remaining}</span>);
+        break;
+      }
+      if (startIdx > 0) {
+        parts.push(<span key={keyIdx++}>{remaining.slice(0, startIdx)}</span>);
+      }
+      remaining = remaining.slice(startIdx + 7);
+      const endIdx = remaining.indexOf("</think>");
+      if (endIdx === -1) {
+        // streaming think block
+        parts.push(
+          <details key={keyIdx++} className="msg-think" open>
+            <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>Thinking...</summary>
+            <div className="msg-think-content" style={{ paddingLeft: 8, borderLeft: "2px solid var(--border)", color: "var(--text-muted)", fontSize: 11 }}>{remaining}</div>
+          </details>
+        );
+        break;
+      } else {
+        parts.push(
+          <details key={keyIdx++} className="msg-think">
+            <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: 11, marginBottom: 4 }}>Thought Process</summary>
+            <div className="msg-think-content" style={{ paddingLeft: 8, borderLeft: "2px solid var(--border)", color: "var(--text-muted)", fontSize: 11, marginBottom: 8 }}>{remaining.slice(0, endIdx)}</div>
+          </details>
+        );
+        remaining = remaining.slice(endIdx + 8);
+      }
+    }
+    return parts;
+  };
+
   return (
     <div className={`msg msg-${role} animate-slide-up`}>
       <div className="msg-role">{role === "user" ? "you" : "ai"}</div>
@@ -244,7 +304,7 @@ function MessageBubble({
         {agentSteps && agentSteps.length > 0 && (
           <AgentStepList steps={agentSteps} isRunning={false} />
         )}
-        <p className="msg-text">{content}</p>
+        <div className="msg-text">{renderContentWithThink(content)}</div>
         {hunks && hunks.length > 0 && (
           <div className="msg-hunks">
             {hunks.map((h) => (
@@ -265,24 +325,6 @@ function MessageBubble({
   );
 }
 
-// ── Theme switcher ────────────────────────────────────────────────
-function ThemeSwitcher() {
-  const theme = useEditorStore((s) => s.theme);
-  const setTheme = useEditorStore((s) => s.setTheme);
-  const themes: Theme[] = ["dark", "grey", "light"];
-  return (
-    <div className="theme-switcher">
-      {themes.map((t) => (
-        <button
-          key={t}
-          className={`theme-btn ${theme === t ? "active" : ""}`}
-          onClick={() => setTheme(t)}
-          title={t}
-        />
-      ))}
-    </div>
-  );
-}
 
 // ── Main AI Panel ──────────────────────────────────────────────────
 export function AIPanel() {
@@ -296,14 +338,16 @@ export function AIPanel() {
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
   const [agentRunning, setAgentRunning] = useState(false);
   const [liveSteps, setLiveSteps] = useState<AgentStep[]>([]);
+  const [pausedStream, setPausedStream] = useState<string | null>(null);
   const abortRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleStop = () => {
     abortRef.current = true;
-    setIsStreaming(false);
+    invoke("abort_llm").catch(() => {});
     setAgentRunning(false);
+    // Note: isStreaming is set to false by the llm-aborted event for regular calls
   };
 
   const provider = useEditorStore((s) => s.provider);
@@ -328,13 +372,23 @@ export function AIPanel() {
   const setTerminalCwd = useEditorStore((s) => s.setTerminalCwd);
   const activeTerminalId = useEditorStore((s) => s.activeTerminalId);
   const addPromptHistory = useEditorStore((s) => s.addPromptHistory);
+  const projectTabs = useEditorStore((s) => s.projectTabs);
+  const activeProjectTabId = useEditorStore((s) => s.activeProjectTabId);
+  const aiPanelMode = useEditorStore((s) => s.aiPanelMode);
+  const setAiPanelMode = useEditorStore((s) => s.setAiPanelMode);
+  const fileTree = projectTabs.find(t => t.id === activeProjectTabId)?.fileTree ?? [];
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
   const messages = activeSession?.messages ?? [];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamBuffer]);
+    
+    // Auto-plan fallback for long thoughts
+    if (isStreaming && streamBuffer.includes("<think>") && !streamBuffer.includes("</think>") && streamBuffer.length > 1500) {
+      if (!planMode) setPlanMode(true);
+    }
+  }, [messages, streamBuffer, isStreaming, planMode]);
 
   // Detect file paths in prompt
   const handlePromptChange = useCallback(async (val: string) => {
@@ -342,41 +396,41 @@ export function AIPanel() {
     if (!workspacePath) return;
     const paths = detectFilePaths(val);
     const newPaths = paths.filter(
-      (p) => !contextFiles.some((cf) => cf.path.endsWith(p)) && !activeFilePath?.endsWith(p)
+      (p) => !contextFiles.some((cf) => cf.path.includes(p)) && (!activeFilePath || !activeFilePath.includes(p))
     );
     setDetectedPaths(newPaths);
   }, [contextFiles, activeFilePath, workspacePath]);
 
   // Open detected file as the active editor file (so AI edits it directly)
-  const switchToDetectedFile = async (relPath: string) => {
+  const switchToDetectedFile = async (query: string) => {
     if (!workspacePath) return;
-    const fullPath = relPath.startsWith("/") ? relPath : `${workspacePath}/${relPath}`;
-    setDetectedPaths((prev) => prev.filter(p => p !== relPath));
+    const resolvedPath = findNodeInTree(fileTree, query) || (query.startsWith("/") ? query : `${workspacePath}/${query}`);
+    setDetectedPaths((prev) => prev.filter(p => p !== query));
     try {
-      const existing = openFiles.find((f) => f.path === fullPath);
+      const existing = openFiles.find((f) => f.path === resolvedPath);
       if (existing) {
-        setActiveFile(fullPath);
+        setActiveFile(resolvedPath);
         return;
       }
-      const content = await invoke<string>("read_file", { path: fullPath });
-      const language = await invoke<string>("get_file_language", { path: fullPath });
-      const name = relPath.split("/").pop() ?? relPath;
-      openFile({ path: fullPath, name, content, language, isDirty: false });
+      const content = await invoke<string>("read_file", { path: resolvedPath });
+      const language = await invoke<string>("get_file_language", { path: resolvedPath });
+      const name = resolvedPath.split("/").pop() ?? resolvedPath;
+      openFile({ path: resolvedPath, name, content, language, isDirty: false });
     } catch (e) {
       console.error("Could not open detected file:", e);
     }
   };
 
-  const loadContextFile = async (relPath: string) => {
+  const loadContextFile = async (query: string) => {
     if (!workspacePath) return;
-    const fullPath = relPath.startsWith("/") ? relPath : `${workspacePath}/${relPath}`;
+    const resolvedPath = findNodeInTree(fileTree, query) || (query.startsWith("/") ? query : `${workspacePath}/${query}`);
     try {
-      const content = await invoke<string>("read_file", { path: fullPath });
-      const name = relPath.split("/").pop() ?? relPath;
-      setContextFiles((prev) => [...prev.filter(f => f.path !== fullPath), { path: fullPath, name, content }]);
-      setDetectedPaths((prev) => prev.filter(p => p !== relPath));
+      const content = await invoke<string>("read_file", { path: resolvedPath });
+      const name = resolvedPath.split("/").pop() ?? resolvedPath;
+      setContextFiles((prev) => [...prev.filter(f => f.path !== resolvedPath), { path: resolvedPath, name, content }]);
+      setDetectedPaths((prev) => prev.filter(p => p !== query));
     } catch {
-      setDetectedPaths((prev) => prev.filter(p => p !== relPath));
+      setDetectedPaths((prev) => prev.filter(p => p !== query));
     }
   };
 
@@ -392,36 +446,49 @@ export function AIPanel() {
     return "\n\nAdditional context files:\n" + parts.join("\n\n");
   };
 
-  const handleSend = async () => {
-    if (!prompt.trim() || !selectedModel || !activeFile || isStreaming) return;
+  const handleSend = async (resumeFromPartial?: string) => {
+    if ((!prompt.trim() && !resumeFromPartial) || !selectedModel || !activeFile || isStreaming) return;
 
     abortRef.current = false;
-    const userPrompt = prompt.trim();
+    const userPrompt = prompt.trim() || (resumeFromPartial ? "Continue exactly where you left off. Do not repeat the output you already provided." : "");
     const beforeContent = activeFile.content;
-    setPrompt("");
-    setDetectedPaths([]);
-    clearStream();
-    setIsStreaming(true);
-    setDiff([], "");
 
-    addMessage({
-      id: `m_${Date.now()}`,
-      role: "user",
-      content: userPrompt + (contextFiles.length > 0 ? ` [+${contextFiles.length} context file${contextFiles.length !== 1 ? "s" : ""}]` : ""),
-      filePath: activeFile.path,
-      timestamp: Date.now(),
-    });
+    if (!resumeFromPartial) {
+      setPrompt("");
+      setDetectedPaths([]);
+      clearStream();
+      setDiff([], "");
+      addMessage({
+        id: `m_${Date.now()}`,
+        role: "user",
+        content: userPrompt + (contextFiles.length > 0 ? ` [+${contextFiles.length} context file${contextFiles.length !== 1 ? "s" : ""}]` : ""),
+        filePath: activeFile.path,
+        timestamp: Date.now(),
+      });
+    } else {
+      setPausedStream(null);
+    }
+    
+    setIsStreaming(true);
 
     const baseUrl = provider === "ollama" ? settings.ollamaUrl : settings.lmstudioUrl;
     const contextBlock = buildContextBlock();
-    const enrichedPrompt = userPrompt + contextBlock;
+    const enrichedPrompt = resumeFromPartial ? userPrompt : (userPrompt + contextBlock);
 
     const unlistenChunk = await listen<string>("llm-chunk", (ev) => appendStream(ev.payload));
 
+    let unlistenDoneFn: () => void = () => {};
+    let unlistenAbortedFn: () => void = () => {};
+
+    const cleanupListeners = () => {
+      unlistenChunk();
+      unlistenDoneFn();
+      unlistenAbortedFn();
+    };
+
     const unlistenDone = await listen<string>("llm-done", async (ev) => {
       const modified = ev.payload;
-      unlistenChunk();
-      unlistenDone();
+      cleanupListeners();
 
       let hunks: DiffHunk[] = [];
       try {
@@ -470,6 +537,14 @@ export function AIPanel() {
       clearStream();
       setIsStreaming(false);
     });
+    unlistenDoneFn = unlistenDone;
+
+    const unlistenAborted = await listen<string>("llm-aborted", async (ev) => {
+      cleanupListeners();
+      setPausedStream(ev.payload);
+      setIsStreaming(false);
+    });
+    unlistenAbortedFn = unlistenAborted;
 
     // Pass last 10 messages as history (exclude the one we just added)
     const historyMessages = messages.slice(-10).map((m) => ({
@@ -486,10 +561,10 @@ export function AIPanel() {
         filePath: activeFile.path,
         userPrompt: enrichedPrompt,
         history: historyMessages,
+        partialAssistant: resumeFromPartial || null,
       });
     } catch (e: any) {
-      unlistenChunk();
-      unlistenDone();
+      cleanupListeners();
       addMessage({
         id: `m_${Date.now()}`,
         role: "assistant",
@@ -711,6 +786,35 @@ export function AIPanel() {
     }
   };
 
+  const pendingAITask = useEditorStore((s) => s.pendingAITask);
+  const clearAITask = useEditorStore((s) => s.clearAITask);
+
+  useEffect(() => {
+    if (pendingAITask && !agentRunning && !isStreaming) {
+      // Try to determine mode. Usually toolbar actions are code edits.
+      if (agentMode) setAgentMode(false);
+      
+      // We must defer the execution slightly so state updates apply
+      setTimeout(() => {
+        setPrompt(pendingAITask);
+        // We can't directly call handleSend with prompt parameter easily because handleSend reads from state, 
+        // but it reads the state right now which might not be updated.
+        // Actually, let's just use the override pattern or wait for prompt state to sync!
+        // To be safe, we just set prompt and trigger the call via a ref or pass it down natively.
+      }, 0);
+    }
+  }, [pendingAITask, agentRunning, isStreaming, agentMode]);
+
+  // A separate effect to auto-send when prompt matches pending task
+  useEffect(() => {
+    if (pendingAITask && prompt === pendingAITask && !isStreaming && !agentRunning) {
+      clearAITask();
+      setTimeout(() => {
+        handleSend();
+      }, 50);
+    }
+  }, [prompt, pendingAITask, isStreaming, agentRunning, clearAITask]);
+
   // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current;
@@ -725,7 +829,16 @@ export function AIPanel() {
       <div className="ai-header">
         <div className="ai-title">LOCAI</div>
         <div className="ai-header-actions">
-          <ThemeSwitcher />
+          <button 
+            className={`ai-icon-btn ${aiPanelMode === "floating" ? "active" : ""}`} 
+            onClick={() => setAiPanelMode(aiPanelMode === "floating" ? "pinned" : "floating")} 
+            title={aiPanelMode === "floating" ? "Pin Sidebar" : "Float Sidebar (Auto-hide)"}
+            style={{ color: aiPanelMode === "floating" ? "var(--accent)" : "currentColor" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V3zm2-1a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h6.5V2H3zm7.5 11H13a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-2.5v11z"/>
+            </svg>
+          </button>
           <button className="ai-icon-btn" onClick={() => setShowSess(!showSess)} title="Sessions">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
               <path d="M2 2a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2zm1 0v12h10V2H3z"/>
@@ -748,7 +861,7 @@ export function AIPanel() {
       <ModelSelector />
 
       {/* Mode bar */}
-      <div className="ai-mode-bar">
+      <div className="ai-mode-bar" style={{ display: "flex", alignItems: "center" }}>
         <button
           className={`ai-mode-btn ${!agentMode ? "active" : ""}`}
           onClick={() => { setAgentMode(false); setPlanMode(false); }}
@@ -769,6 +882,14 @@ export function AIPanel() {
           title="Plan mode — AI creates a step-by-step plan before executing"
         >
           plan
+        </button>
+        <button
+          className="ai-mode-btn"
+          style={{ marginLeft: "auto", background: "none", color: "var(--text-muted)", border: "1px dashed var(--border)" }}
+          onClick={() => useEditorStore.getState().createSession()}
+          title="Start a new session"
+        >
+          + New
         </button>
       </div>
 
@@ -821,6 +942,27 @@ export function AIPanel() {
               <div className="streaming-indicator">
                 <span /><span /><span />
               </div>
+            </div>
+          </div>
+        )}
+        {/* Paused stream (edit mode) */}
+        {pausedStream && !isStreaming && (
+          <div className="msg msg-assistant animate-fade-in">
+            <div className="msg-role">ai (paused)</div>
+            <div className="msg-body">
+              <div className="msg-text">
+                <span className="msg-think-content" style={{ color: "var(--text-muted)" }}>
+                  {pausedStream.length > 200 ? "..." + pausedStream.slice(-200) : pausedStream}
+                </span>
+              </div>
+              <button 
+                className="ai-detected-btn ai-detected-btn-switch" 
+                onClick={() => handleSend(pausedStream)}
+                style={{ marginTop: 8 }}
+                title="Continue generating starting from this partial output"
+              >
+                ▶ Resume Generation
+              </button>
             </div>
           </div>
         )}
@@ -913,46 +1055,53 @@ export function AIPanel() {
 
       {/* Prompt */}
       <div className="ai-input-area">
-        <textarea
-          ref={textareaRef}
-          className="ai-textarea"
-          value={prompt}
-          onChange={(e) => handlePromptChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            agentMode && !workspacePath
-              ? "describe the project to create (e.g. React calculator app)…"
-              : agentMode
-                ? "describe what to do… agent will read/write/run across the project"
-                : activeFile
-                  ? "describe changes… mention file paths to include as context"
-                  : "open a file first"
-          }
-          disabled={agentMode ? agentRunning : (!activeFile || isStreaming)}
-          rows={1}
-        />
-        {isStreaming || agentRunning ? (
-          <button
-            className="ai-send"
-            onClick={handleStop}
-            title="Stop Generation"
-            style={{ color: "var(--red)" }}
-          >
-            🛑
-          </button>
-        ) : (
-          <button
-            className="ai-send"
-            onClick={agentMode ? () => handleAgentSend() : handleSend}
-            disabled={
-              agentMode
-                ? !selectedModel || !prompt.trim()
-                : !activeFile || !selectedModel || !prompt.trim()
+        <div className="ai-input-wrapper">
+          <textarea
+            ref={textareaRef}
+            className="ai-textarea"
+            value={prompt}
+            onChange={(e) => handlePromptChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              agentMode && !workspacePath
+                ? "Describe project to build…"
+                : agentMode
+                  ? "Describe what to do across the project…"
+                  : activeFile
+                    ? "Describe changes or ask questions…"
+                    : "Open a file or start agent mode"
             }
-          >
-            ↑
-          </button>
-        )}
+            disabled={agentMode ? agentRunning : (!activeFile || isStreaming)}
+            rows={1}
+          />
+          {isStreaming || agentRunning ? (
+            <button
+              className="ai-send"
+              onClick={handleStop}
+              title="Stop Generation"
+              style={{ background: "var(--red)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              className="ai-send"
+              onClick={agentMode ? () => handleAgentSend() : () => handleSend()}
+              disabled={
+                agentMode
+                  ? !selectedModel || !prompt.trim()
+                  : !activeFile || !selectedModel || !prompt.trim()
+              }
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points="5 12 12 5 19 12"></polyline>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,10 +1,91 @@
 .ed-panel {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: var(--bg-primary);
+  position: relative;
   overflow: hidden;
+  height: 100%;
 }
+
+.ed-monaco-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.ed-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.ed-toolbar-left, .ed-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ed-toolbar-lang {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ed-t-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.ed-t-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ed-t-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.ed-t-ai {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.ed-t-ai:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+
 
 /* ── Tabs ── */
 .ed-tabs {

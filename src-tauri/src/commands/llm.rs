@@ -1,6 +1,14 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static ABORT_LLM: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+pub fn abort_llm() {
+    ABORT_LLM.store(true, Ordering::SeqCst);
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelInfo {
@@ -236,6 +244,7 @@ pub async fn stream_llm(
     file_path: String,
     user_prompt: String,
     history: Option<Vec<HistoryMessage>>,
+    partial_assistant: Option<String>,
 ) -> Result<(), String> {
     let numbered: String = file_content
         .lines()
@@ -293,6 +302,20 @@ pub async fn stream_llm(
         content: user_message,
     });
 
+    let mut full_content = String::new();
+
+    // If resuming from a pause, inject the partial assistant message at the end
+    // so the LLM continues from it. We also pre-seed full_content so the final diff is complete.
+    if let Some(partial) = partial_assistant {
+        messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: partial.clone(),
+        });
+        full_content.push_str(&partial);
+        // Send the partial back to UI immediately so it doesn't flicker
+        app.emit("llm-chunk", partial).unwrap_or(());
+    }
+
     let body = StreamRequest {
         model: model.clone(),
         messages,
@@ -315,11 +338,16 @@ pub async fn stream_llm(
         .map_err(|e| e.to_string())?;
 
     let mut stream = resp.bytes_stream();
-    let mut full_content = String::new();
 
+    ABORT_LLM.store(false, Ordering::SeqCst);
     app.emit("llm-start", ()).map_err(|e| e.to_string())?;
 
     while let Some(chunk) = stream.next().await {
+        if ABORT_LLM.load(Ordering::SeqCst) {
+            app.emit("llm-aborted", full_content.clone()).unwrap_or(());
+            return Ok(());
+        }
+
         let bytes = chunk.map_err(|e| e.to_string())?;
         let text = String::from_utf8_lossy(&bytes);
 

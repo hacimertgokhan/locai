@@ -5,19 +5,22 @@ def pad_icon(path):
     img = Image.open(path).convert("RGBA")
     w, h = img.size
     
-    # Calculate new smaller size (e.g. 70%)
-    scale = 0.65
+    # Force square canvas
+    max_dim = max(w, h)
+    
+    # Calculate new smaller size based on max_dim
+    scale = 0.75
     new_w = int(w * scale)
     new_h = int(h * scale)
     
     resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     
-    # Create empty canvas of original size
-    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    # Create empty square canvas
+    canvas = Image.new("RGBA", (max_dim, max_dim), (0, 0, 0, 0))
     
     # Paste centered
-    x_offset = (w - new_w) // 2
-    y_offset = (h - new_h) // 2
+    x_offset = (max_dim - new_w) // 2
+    y_offset = (max_dim - new_h) // 2
     canvas.paste(resized, (x_offset, y_offset), resized)
     
     canvas.save(path)

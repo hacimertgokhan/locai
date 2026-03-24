@@ -11,10 +11,11 @@ use commands::file::{
 };
 use commands::git::{
     git_branches, git_checkout_branch, git_commit, git_current_branch, git_diff_file, git_log,
-    git_stage, git_status, git_unstage,
+    git_stage, git_status, git_unstage, git_stash, git_stash_pop, git_diff_staged,
 };
 use commands::llm::{list_lmstudio_models, list_ollama_models, stream_llm};
 use commands::terminal::run_terminal_command;
+use commands::system::{get_mac_battery, get_mac_media_info, control_mac_media};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,6 +43,9 @@ pub fn run() {
             git_checkout_branch,
             git_diff_file,
             git_current_branch,
+            git_stash,
+            git_stash_pop,
+            git_diff_staged,
             search_in_files,
             replace_in_file,
             // Agent commands
@@ -51,6 +55,10 @@ pub fn run() {
             agent_rename_path,
             agent_create_dir,
             agent_run_command,
+            // System commands
+            get_mac_battery,
+            get_mac_media_info,
+            control_mac_media,
         ])
         .run(tauri::generate_context!())
         .expect("error while running locai");
