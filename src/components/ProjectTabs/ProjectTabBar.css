@@ -3,11 +3,12 @@
   display: flex;
   align-items: center;
   height: 100%;
-  background: var(--bg-primary);
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
-  gap: 0;
+  gap: 8px;
   flex-shrink: 0;
+  padding: 0 8px;
 }
 
 .project-tabs-scroll {
@@ -17,8 +18,8 @@
   flex: 1;
   min-width: 0;
   scrollbar-width: none;
-  gap: 1px;
-  padding: 0 2px;
+  gap: 6px;
+  padding: 0;
 }
 .project-tabs-scroll::-webkit-scrollbar { display: none; }
 
@@ -26,38 +27,42 @@
 .project-tab {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 10px 0 8px;
-  height: 100%;
-  min-width: 90px;
-  max-width: 180px;
+  gap: 7px;
+  padding: 0 9px;
+  height: 22px;
+  min-width: 108px;
+  max-width: 220px;
   cursor: pointer;
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
   position: relative;
-  transition: color 0.15s, background 0.15s;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
   user-select: none;
   flex-shrink: 0;
 }
 
 .project-tab:hover {
   color: var(--text-primary);
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 
 .project-tab.active {
   color: var(--text-primary);
-  background: var(--bg-secondary);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .project-tab-icon {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 .project-tab.active .project-tab-icon {
   opacity: 1;
@@ -69,7 +74,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.015em;
 }
 
 .project-tab-input {
@@ -78,40 +83,46 @@
   border: 1px solid var(--accent);
   color: var(--text-primary);
   font-size: 11px;
-  padding: 1px 4px;
+  padding: 1px 6px;
   min-width: 0;
   outline: none;
+  border-radius: 4px;
 }
 
 .project-tab-open-btn {
   background: none;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 4px;
   color: var(--accent);
   cursor: pointer;
-  padding: 2px;
+  padding: 1px;
   display: flex;
   align-items: center;
-  opacity: 0.7;
+  justify-content: center;
+  opacity: 0.75;
   flex-shrink: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s;
 }
 .project-tab-open-btn svg {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
-.project-tab-open-btn:hover { opacity: 1; }
+.project-tab-open-btn:hover {
+  opacity: 1;
+  background: var(--accent-dim);
+}
 
 .project-tab-close {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 9px;
-  padding: 2px 3px;
+  font-size: 10px;
+  padding: 2px 4px;
   opacity: 0;
   transition: opacity 0.12s, color 0.12s;
   flex-shrink: 0;
-  border-radius: 2px;
+  border-radius: 4px;
   line-height: 1;
 }
 .project-tab:hover .project-tab-close { opacity: 0.7; }
@@ -123,21 +134,23 @@
 
 /* ── New tab button ── */
 .project-tab-new {
-  background: none;
-  border: none;
-  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-tertiary) 92%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 8px;
   color: var(--text-muted);
-  font-size: 16px;
-  font-weight: 300;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 0 12px;
-  height: 100%;
+  padding: 0 9px;
+  height: 22px;
   flex-shrink: 0;
-  transition: color 0.15s, background 0.15s;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .project-tab-new:hover {
   color: var(--accent);
-  background: var(--bg-secondary);
+  border-color: var(--accent);
+  background: var(--accent-dim);
 }

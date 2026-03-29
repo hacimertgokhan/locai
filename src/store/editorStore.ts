@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { DiffHunk, Session, ChatMessage, Theme, TerminalSession, TerminalLine, PromptHistoryEntry, FileEntry } from "../types";
+import { OpenCodeMetadata, loadOpenCode as loadOC } from "../lib/opencode/loader";
 
 let _lineId = 0;
 export function nextLineId() { return ++_lineId; }
@@ -28,11 +29,17 @@ export interface OpenFile {
 
 export type LLMProvider = "ollama" | "lmstudio";
 
+export interface ModelSettings {
+  reasoningEnabled: boolean;
+  customInstructions: string;
+}
+
 export interface Settings {
   ollamaUrl: string;
   lmstudioUrl: string;
   fontFamily: string;
   fontSize: number;
+  modelSettings: Record<string, ModelSettings>;
 }
 
 export type ProjectType = "frontend" | "backend" | "unknown";
@@ -118,6 +125,14 @@ export interface MCPServer {
   url: string;
 }
 
+export interface PendingAITask {
+  prompt: string;
+  mode?: "editor" | "agent";
+  autoSend?: boolean;
+}
+
+export type MainView = "editor" | "docs" | "apitest";
+
 // ── Store ─────────────────────────────────────────────────────────
 interface EditorState {
   // ── Project Tabs ─────────────────────────────────────────────────
@@ -167,13 +182,15 @@ interface EditorState {
   setSelectedModel: (m: string) => void;
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
+  isAiBusy: boolean;
+  setIsAiBusy: (v: boolean) => void;
   streamBuffer: string;
   appendStream: (chunk: string) => void;
   clearStream: () => void;
 
   // Global AI Task Dispatcher
-  pendingAITask: string | null;
-  dispatchAITask: (prompt: string) => void;
+  pendingAITask: PendingAITask | null;
+  dispatchAITask: (task: string | PendingAITask) => void;
   clearAITask: () => void;
 
   // Sessions
@@ -191,6 +208,7 @@ interface EditorState {
   // Settings
   settings: Settings;
   updateSettings: (s: Partial<Settings>) => void;
+  updateModelSettings: (modelId: string, s: Partial<ModelSettings>) => void;
   showSettings: boolean;
   setShowSettings: (v: boolean) => void;
 
@@ -217,13 +235,16 @@ interface EditorState {
   terminalCwd: string | null;
 
   // Activity bar / sidebar view
-  sidebarView: "files" | "git" | "search" | "history" | "skills" | "mcp";
-  setSidebarView: (v: "files" | "git" | "search" | "history" | "skills" | "mcp") => void;
+  sidebarView: "files" | "git" | "search" | "history" | "skills" | "mcp" | "docs" | "apitest";
+  setSidebarView: (v: "files" | "git" | "search" | "history" | "skills" | "mcp" | "docs" | "apitest") => void;
   sidebarVisible: boolean;
   setSidebarVisible: (v: boolean) => void;
 
   aiPanelMode: "pinned" | "floating";
   setAiPanelMode: (m: "pinned" | "floating") => void;
+
+  mainView: MainView;
+  setMainView: (v: MainView) => void;
 
   // Prompt history
   promptHistory: PromptHistoryEntry[];
@@ -238,7 +259,12 @@ interface EditorState {
   mcpServers: MCPServer[];
   addMCPServer: (server: MCPServer) => void;
   removeMCPServer: (id: string) => void;
+  // OpenCode
+  openCode: OpenCodeMetadata | null;
+  loadOpenCode: () => Promise<void>;
 }
+
+
 
 const _initialTab = newProjectTab(1);
 const { sessions: initialSessions, activeId } = getOrCreateActiveSession(loadSessions());
@@ -323,12 +349,25 @@ export const useEditorStore = create<EditorState>()(
   },
 
   workspacePath: null,
-  setWorkspacePath: (path) => set((s) => ({
-    workspacePath: path,
-    projectTabs: s.projectTabs.map(t =>
-      t.id === s.activeProjectTabId ? { ...t, workspacePath: path, name: path ? path.split("/").pop() ?? path : "Project" } : t
-    ),
-  })),
+  setWorkspacePath: (path) => {
+    set((s) => ({
+      workspacePath: path,
+      projectTabs: s.projectTabs.map(t =>
+        t.id === s.activeProjectTabId ? { ...t, workspacePath: path, name: path ? path.split("/").pop() ?? path : "Project" } : t
+      ),
+    }));
+    if (path) {
+      get().loadOpenCode();
+    }
+  },
+
+  openCode: null,
+  loadOpenCode: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath) return;
+    const oc = await loadOC(workspacePath);
+    set({ openCode: oc });
+  },
 
   projectInfo: { type: "unknown" },
   setProjectInfo: (info) => set((s) => ({
@@ -459,14 +498,17 @@ export const useEditorStore = create<EditorState>()(
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   isStreaming: false,
   setIsStreaming: (isStreaming) => set({ isStreaming }),
+  isAiBusy: false,
+  setIsAiBusy: (isAiBusy) => set({ isAiBusy }),
   streamBuffer: "",
   appendStream: (chunk) => set((s) => ({ streamBuffer: s.streamBuffer + chunk })),
   clearStream: () => set({ streamBuffer: "" }),
 
   // Global AI Task Dispatcher
   pendingAITask: null,
-  dispatchAITask: (prompt) => {
-    set({ pendingAITask: prompt, aiPanelMode: "pinned" }); // ensure panel is visible
+  dispatchAITask: (task) => {
+    const nextTask: PendingAITask = typeof task === "string" ? { prompt: task } : task;
+    set({ pendingAITask: nextTask, aiPanelMode: "pinned" });
   },
   clearAITask: () => set({ pendingAITask: null }),
 
@@ -531,8 +573,21 @@ export const useEditorStore = create<EditorState>()(
     lmstudioUrl: "http://localhost:1234",
     fontFamily: "Outfit",
     fontSize: 14,
+    modelSettings: {},
   },
   updateSettings: (s) => set((state) => ({ settings: { ...state.settings, ...s } })),
+  updateModelSettings: (modelId, s) => set((state) => {
+    const current = state.settings.modelSettings[modelId] || { reasoningEnabled: true, customInstructions: "" };
+    return {
+      settings: {
+        ...state.settings,
+        modelSettings: {
+          ...state.settings.modelSettings,
+          [modelId]: { ...current, ...s }
+        }
+      }
+    };
+  }),
   showSettings: false,
   setShowSettings: (showSettings) => set({ showSettings }),
 
@@ -663,6 +718,9 @@ export const useEditorStore = create<EditorState>()(
   aiPanelMode: "pinned",
   setAiPanelMode: (m) => set({ aiPanelMode: m }),
 
+  mainView: "editor",
+  setMainView: (mainView) => set({ mainView }),
+
   // Prompt history
   promptHistory: loadHistory(),
   addPromptHistory: (entry) => {
@@ -696,6 +754,7 @@ export const useEditorStore = create<EditorState>()(
         selectedModel: state.selectedModel,
         sidebarView: state.sidebarView,
         sidebarVisible: state.sidebarVisible,
+        mainView: state.mainView,
       }),
       onRehydrateStorage: () => (state) => {
         // Run after hydration completes to sync the active tab's properties into the root properties

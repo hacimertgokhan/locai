@@ -85,10 +85,10 @@ export function SystemToolbar() {
   };
 
   return (
-    <div className="sys-toolbar" style={{ display: "flex", alignItems: "center", marginLeft: "auto", gap: "12px", paddingRight: "16px", height: "100%", position: "relative" }}>
+    <div className="sys-toolbar">
       
       {/* Network */}
-      <div className="sys-item" title={online ? "Online" : "Offline"} style={{ color: online ? "var(--text-primary)" : "var(--git-deleted)", display: "flex", alignItems: "center" }}>
+      <div className="sys-item" title={online ? "Online" : "Offline"} style={{ color: online ? "var(--text-primary)" : "var(--git-deleted)" }}>
         {online ? (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
@@ -111,7 +111,7 @@ export function SystemToolbar() {
 
       {/* Battery */}
       {battery && battery.level !== null && (
-        <div className="sys-item" title={`Battery: ${battery.level}% ${battery.is_charging ? "(Charging)" : ""}`} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "var(--text-muted)" }}>
+        <div className="sys-item" title={`Battery: ${battery.level}% ${battery.is_charging ? "(Charging)" : ""}`} style={{ gap: "4px", fontSize: "11px", color: "var(--text-muted)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect>
             <line x1="22" y1="11" x2="22" y2="13"></line>
@@ -126,7 +126,7 @@ export function SystemToolbar() {
         className="sys-item sys-media-trigger" 
         title={media?.track_name || "Media Player"} 
         onClick={(e) => { e.stopPropagation(); setShowPopup(!showPopup); }} 
-        style={{ display: "flex", alignItems: "center", cursor: "pointer", color: media?.is_playing ? "var(--accent)" : "var(--text-muted)" }}
+        style={{ cursor: "pointer", color: media?.is_playing ? "var(--accent)" : "var(--text-muted)" }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M9 18V5l12-2v13"></path>
@@ -137,7 +137,7 @@ export function SystemToolbar() {
 
       {/* Media Popup */}
       {showPopup && (
-        <div ref={popupRef} className="sys-media-popup animate-slide-up" style={{ position: "absolute", bottom: "100%", right: 10, marginBottom: "12px", borderRadius: "16px", padding: "16px", width: "280px", zIndex: 10000, fontFamily: "var(--font-primary)" }}>
+        <div ref={popupRef} className="sys-media-popup animate-slide-up" style={{ position: "absolute", left: "calc(100% + 10px)", bottom: 8, borderRadius: "16px", padding: "16px", width: "280px", zIndex: 10000, fontFamily: "var(--font-primary)" }}>
           
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
             <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 600 }}>

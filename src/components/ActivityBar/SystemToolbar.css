@@ -1,3 +1,19 @@
+.sys-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  position: relative;
+  padding: 10px 0 4px;
+}
+
+.sys-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .sys-media-popup {
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease-out;
   backdrop-filter: blur(20px);

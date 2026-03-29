@@ -13,6 +13,7 @@ use commands::git::{
     git_branches, git_checkout_branch, git_commit, git_current_branch, git_diff_file, git_log,
     git_stage, git_status, git_unstage, git_stash, git_stash_pop, git_diff_staged,
 };
+use commands::http::{discover_api_endpoints, http_request};
 use commands::llm::{list_lmstudio_models, list_ollama_models, stream_llm};
 use commands::terminal::run_terminal_command;
 use commands::system::{get_mac_battery, get_mac_media_info, control_mac_media};
@@ -46,6 +47,8 @@ pub fn run() {
             git_stash,
             git_stash_pop,
             git_diff_staged,
+            http_request,
+            discover_api_endpoints,
             search_in_files,
             replace_in_file,
             // Agent commands

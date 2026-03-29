@@ -48,9 +48,6 @@ export function ProjectTabBar() {
 
   return (
     <div className="project-tab-bar">
-      <div style={{ display: "flex", alignItems: "center", padding: "0 12px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
-        <img src="/icon.png" alt="locai" style={{ height: 26, width: "auto", objectFit: "contain", borderRadius: 4 }} />
-      </div>
       <div className="project-tabs-scroll">
         {projectTabs.map((tab) => (
           <div
@@ -60,7 +57,6 @@ export function ProjectTabBar() {
             onDoubleClick={() => startRename(tab.id, tab.name)}
             title={tab.workspacePath ?? tab.name}
           >
-            {/* Folder icon */}
             <svg className="project-tab-icon" viewBox="0 0 16 16" fill="currentColor">
               <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/>
             </svg>
@@ -82,7 +78,6 @@ export function ProjectTabBar() {
               <span className="project-tab-name">{tab.name}</span>
             )}
 
-            {/* Open folder button (when no workspace) */}
             {!tab.workspacePath && (
               <button
                 className="project-tab-open-btn"
@@ -95,7 +90,6 @@ export function ProjectTabBar() {
               </button>
             )}
 
-            {/* Close button */}
             {projectTabs.length > 1 && (
               <button
                 className="project-tab-close"
@@ -109,7 +103,6 @@ export function ProjectTabBar() {
         ))}
       </div>
 
-      {/* New tab button */}
       <button
         className="project-tab-new"
         onClick={createProjectTab}

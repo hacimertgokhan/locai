@@ -157,3 +157,25 @@
 .s-cancel:hover { border-color: var(--text-muted); color: var(--text-primary); }
 .s-save { background: var(--accent); color: #fff; border-color: var(--accent); }
 .s-save:hover { background: var(--accent-hover); }
+
+.s-model-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 10px;
+}
+
+.s-field-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--corporate-text);
+  margin-top: 12px;
+}
+
+.s-field-inline input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--corporate-accent);
+  cursor: pointer;
+}

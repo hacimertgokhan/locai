@@ -245,14 +245,9 @@ pub async fn stream_llm(
     user_prompt: String,
     history: Option<Vec<HistoryMessage>>,
     partial_assistant: Option<String>,
+    custom_instructions: Option<String>,
+    reasoning_enabled: Option<bool>,
 ) -> Result<(), String> {
-    let numbered: String = file_content
-        .lines()
-        .enumerate()
-        .map(|(i, line)| format!("{:4} | {}", i + 1, line))
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let line_count = file_content.lines().count();
 
     // Build enhanced system prompt
@@ -270,14 +265,25 @@ pub async fn stream_llm(
     system_prompt.push_str("\n\n");
     system_prompt.push_str(task_guidance);
 
+    if let Some(ci) = custom_instructions {
+        if !ci.is_empty() {
+            system_prompt.push_str("\n\nCUSTOM USER INSTRUCTIONS:\n");
+            system_prompt.push_str(&ci);
+        }
+    }
+
+    if let Some(false) = reasoning_enabled {
+        system_prompt.push_str("\n\nIMPORTANT: Do NOT use <think></think> tags or reasoning blocks in your response. Provide the code directly.");
+    }
+
     system_prompt.push_str(&format!(
         "\n\nFILE CONTEXT: {}",
         file_ctx
     ));
 
     let user_message = format!(
-        "File: {} ({})\n\nCurrent file content (line numbers for reference only — do NOT include them in output):\n{}\n\n---\nInstruction: {}\n\nOutput the complete file ({} lines), modifying only what the instruction requires.",
-        file_path, file_ctx, numbered, user_prompt, line_count
+        "File: {} ({})\n\nCurrent file content:\n{}\n\n---\nInstruction: {}\n\nOutput the complete file ({} lines), modifying only what the instruction requires. Never include <think> blocks or explanations.",
+        file_path, file_ctx, file_content, user_prompt, line_count
     );
 
     let mut messages = vec![
@@ -320,7 +326,7 @@ pub async fn stream_llm(
         model: model.clone(),
         messages,
         stream: true,
-        temperature: 0.1,
+        temperature: 0.0,
     };
 
     let url = if provider == "ollama" {
@@ -405,6 +411,7 @@ pub async fn stream_llm(
 
 fn clean_model_output(s: &str) -> String {
     let s = strip_code_fences(s);
+    let s = strip_think_blocks(&s);
     let lines: Vec<&str> = s.lines().collect();
     let numbered_count = lines.iter().filter(|l| is_numbered_line(l)).count();
     let non_empty = lines.iter().filter(|l| !l.trim().is_empty()).count();
@@ -416,6 +423,24 @@ fn clean_model_output(s: &str) -> String {
             .join("\n");
     }
     s
+}
+
+fn strip_think_blocks(s: &str) -> String {
+    let mut out = s.to_string();
+
+    loop {
+        let Some(start) = out.find("<think>") else { break; };
+        let rest = &out[start + 7..];
+        if let Some(rel_end) = rest.find("</think>") {
+            let end = start + 7 + rel_end + 8;
+            out.replace_range(start..end, "");
+        } else {
+            out.replace_range(start..out.len(), "");
+            break;
+        }
+    }
+
+    out.trim().to_string()
 }
 
 fn is_numbered_line(line: &str) -> bool {

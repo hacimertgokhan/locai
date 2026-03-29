@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileEntry } from "../../types";
@@ -138,21 +138,90 @@ export function FileTree() {
   const setTabFileTree = useEditorStore((s) => s.setTabFileTree);
   // Derive tree from store so tab switches update it automatically
   const tree = useEditorStore((s) => s.fileTree);
+  const treeSignatureRef = useRef("");
   
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; entry?: FileEntry | null } | null>(null);
   const [promptData, setPromptData] = useState<{ type: "createFile" | "createFolder" | "rename" | "delete"; path: string; initialValue?: string } | null>(null);
   const [promptInputValue, setPromptInputValue] = useState("");
+  const [promptError, setPromptError] = useState<string | null>(null);
 
-  const refreshTree = async (currentWorkspace?: string | null) => {
+  const joinPath = (parent: string, child: string) => {
+    const sep = parent.includes("\\") ? "\\" : "/";
+    const safeChild = child.trim().replace(/^[\\/]+|[\\/]+$/g, "").replace(/[\\/]+/g, sep);
+    const safeParent = parent.endsWith("/") || parent.endsWith("\\") ? parent.slice(0, -1) : parent;
+    return `${safeParent}${sep}${safeChild}`;
+  };
+
+  const validateEntryName = (value: string) => {
+    if (!value.trim()) return "Name cannot be empty.";
+    if (value === "." || value === "..") return "Reserved path names are not allowed.";
+    if (/[<>:"|?*\u0000]/.test(value)) return "Name contains unsupported characters.";
+    return null;
+  };
+
+  const buildTreeSignature = useCallback((nodes: FileEntry[]): string => {
+    const parts: string[] = [];
+    const walk = (entries: FileEntry[]) => {
+      for (const entry of entries) {
+        parts.push(`${entry.isDir ? "d" : "f"}:${entry.path}`);
+        if (entry.children && Array.isArray(entry.children)) walk(entry.children);
+      }
+    };
+    walk(nodes);
+    return parts.join("|");
+  }, []);
+
+  const refreshTree = useCallback(async (currentWorkspace?: string | null) => {
     const path = currentWorkspace || workspacePath;
     if (!path) return;
     try {
       const entries = await invoke<FileEntry[]>("read_dir_recursive", { path });
-      setTabFileTree(entries);
+      const signature = buildTreeSignature(entries);
+      if (signature !== treeSignatureRef.current) {
+        treeSignatureRef.current = signature;
+        setTabFileTree(entries);
+      }
     } catch (e) {
       console.error("Failed to refresh file tree:", e);
     }
-  };
+  }, [workspacePath, setTabFileTree, buildTreeSignature]);
+
+  useEffect(() => {
+    treeSignatureRef.current = buildTreeSignature(tree);
+  }, [tree, buildTreeSignature]);
+
+  useEffect(() => {
+    if (!workspacePath) return;
+
+    let inFlight = false;
+    let disposed = false;
+
+    const pollRefresh = async () => {
+      if (disposed || inFlight) return;
+      inFlight = true;
+      try {
+        await refreshTree(workspacePath);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onFocus = () => { void pollRefresh(); };
+    const onVisible = () => {
+      if (!document.hidden) void pollRefresh();
+    };
+
+    const timer = window.setInterval(() => { void pollRefresh(); }, 3000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [workspacePath, refreshTree]);
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
@@ -235,41 +304,75 @@ export function FileTree() {
   const handleCreateFile = (parentPath: string) => {
     setPromptData({ type: "createFile", path: parentPath, initialValue: "" });
     setPromptInputValue("");
+    setPromptError(null);
   };
 
   const handleCreateFolder = (parentPath: string) => {
     setPromptData({ type: "createFolder", path: parentPath, initialValue: "" });
     setPromptInputValue("");
+    setPromptError(null);
   };
 
   const handleRename = (entry: FileEntry) => {
     setPromptData({ type: "rename", path: entry.path, initialValue: entry.name });
     setPromptInputValue(entry.name);
+    setPromptError(null);
   };
 
   const handleDelete = (entry: FileEntry) => {
     setPromptData({ type: "delete", path: entry.path });
+    setPromptError(null);
   };
 
   const submitPrompt = async () => {
     if (!promptData) return;
     const val = promptInputValue.trim();
+    let shouldClosePrompt = true;
+
+    if (promptData.type !== "delete" && !val) {
+      setPromptError("Name cannot be empty.");
+      return;
+    }
+
     try {
       if (promptData.type === "createFile" && val) {
-        await invoke("agent_write_file", { path: `${promptData.path}/${val}`, content: "" });
+        const validationError = validateEntryName(val);
+        if (validationError) {
+          setPromptError(validationError);
+          shouldClosePrompt = false;
+          return;
+        }
+        await invoke("agent_write_file", { path: joinPath(promptData.path, val), content: "" });
       } else if (promptData.type === "createFolder" && val) {
-        await invoke("agent_create_dir", { path: `${promptData.path}/${val}` });
+        const validationError = validateEntryName(val);
+        if (validationError) {
+          setPromptError(validationError);
+          shouldClosePrompt = false;
+          return;
+        }
+        await invoke("agent_create_dir", { path: joinPath(promptData.path, val) });
       } else if (promptData.type === "rename" && val && val !== promptData.initialValue) {
-        const parentPath = promptData.path.substring(0, promptData.path.lastIndexOf("/"));
-        await invoke("agent_rename_path", { from: promptData.path, to: `${parentPath}/${val}` });
+        const validationError = validateEntryName(val);
+        if (validationError) {
+          setPromptError(validationError);
+          shouldClosePrompt = false;
+          return;
+        }
+        const sep = promptData.path.includes("\\") ? "\\" : "/";
+        const parentPath = promptData.path.includes(sep) ? promptData.path.slice(0, promptData.path.lastIndexOf(sep)) : promptData.path;
+        await invoke("agent_rename_path", { from: promptData.path, to: joinPath(parentPath, val) });
       } else if (promptData.type === "delete") {
         await invoke("agent_delete_path", { path: promptData.path });
       }
       await refreshTree();
     } catch (e) {
       console.error(e);
+      shouldClosePrompt = false;
     } finally {
-      setPromptData(null);
+      if (shouldClosePrompt) {
+        setPromptError(null);
+        setPromptData(null);
+      }
     }
   };
 
@@ -365,14 +468,22 @@ export function FileTree() {
                 Are you sure you want to delete this {promptData.path.split("/").pop()}?
               </div>
             ) : (
-              <input 
-                autoFocus
-                className="s-input" 
-                value={promptInputValue} 
-                onChange={(e) => setPromptInputValue(e.target.value)} 
-                onKeyDown={(e) => { if (e.key === "Enter") submitPrompt(); if (e.key === "Escape") setPromptData(null); }}
-                style={{ width: "100%", marginBottom: "16px" }}
-              />
+              <>
+                <input 
+                  autoFocus
+                  className="s-input" 
+                  value={promptInputValue} 
+                  onChange={(e) => {
+                    setPromptInputValue(e.target.value);
+                    if (promptError) setPromptError(null);
+                  }} 
+                  onKeyDown={(e) => { if (e.key === "Enter") submitPrompt(); if (e.key === "Escape") setPromptData(null); }}
+                  style={{ width: "100%", marginBottom: promptError ? "8px" : "16px" }}
+                />
+                {promptError && (
+                  <div style={{ fontSize: "11px", color: "var(--red)", marginBottom: "12px" }}>{promptError}</div>
+                )}
+              </>
             )}
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
               <button className="s-cancel" onClick={() => setPromptData(null)}>Cancel</button>

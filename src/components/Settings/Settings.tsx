@@ -121,6 +121,34 @@ export function SettingsModal() {
                   <input className="s-input" value={lmstudioUrl} onChange={(e) => setLmstudioUrl(e.target.value)} />
                   <div className="s-hint">Default: http://localhost:1234</div>
                 </div>
+
+                {useEditorStore.getState().selectedModel && (
+                  <div className="s-section s-model-settings">
+                    <div className="s-label">
+                       Settings for: <span style={{ color: "var(--corporate-accent)" }}>{useEditorStore.getState().selectedModel.split("/").pop()}</span>
+                    </div>
+                    
+                    <div className="s-field-inline">
+                      <label>Enable Reasoning (Thinking)</label>
+                      <input 
+                        type="checkbox"
+                        checked={useEditorStore.getState().settings.modelSettings[useEditorStore.getState().selectedModel]?.reasoningEnabled ?? true}
+                        onChange={(e) => useEditorStore.getState().updateModelSettings(useEditorStore.getState().selectedModel, { reasoningEnabled: e.target.checked })}
+                      />
+                    </div>
+
+                    <div className="s-field" style={{ marginTop: 12 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontSize: 11, fontWeight: 700 }}>Custom Instructions</label>
+                      <textarea 
+                        className="s-input"
+                        style={{ minHeight: 80, resize: "vertical" }}
+                        placeholder="e.g. Always use TypeScript, be concise, etc."
+                        value={useEditorStore.getState().settings.modelSettings[useEditorStore.getState().selectedModel]?.customInstructions ?? ""}
+                        onChange={(e) => useEditorStore.getState().updateModelSettings(useEditorStore.getState().selectedModel, { customInstructions: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

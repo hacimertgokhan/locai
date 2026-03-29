@@ -1,0 +1,119 @@
+.sidebar-model-picker {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 10px 12px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.smp-title {
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.smp-provider-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.smp-provider-tab {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  height: 24px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.smp-provider-tab:hover {
+  color: var(--text-primary);
+}
+
+.smp-provider-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.smp-model-row {
+  display: flex;
+  gap: 6px;
+}
+
+.smp-model-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-radius: 6px;
+  font-size: 12px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+.smp-model-select:disabled {
+  color: var(--text-muted);
+}
+
+.smp-refresh {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.smp-refresh:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.smp-error {
+  font-size: 11px;
+  color: var(--red);
+}
+
+.smp-thinking {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim2);
+  background: var(--accent-dim);
+  border-radius: 999px;
+  padding: 4px 8px;
+  width: fit-content;
+}
+
+.smp-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: smp-pulse 1s ease-in-out infinite;
+}
+
+@keyframes smp-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}

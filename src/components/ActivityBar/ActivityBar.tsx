@@ -2,7 +2,7 @@ import { useEditorStore } from "../../store/editorStore";
 import { SystemToolbar } from "./SystemToolbar";
 import "./ActivityBar.css";
 
-type View = "files" | "git" | "search" | "history" | "skills" | "mcp";
+type View = "files" | "git" | "search" | "history" | "skills" | "mcp" | "docs" | "apitest";
 
 interface ActivityItem {
   view: View;
@@ -75,6 +75,29 @@ const items: ActivityItem[] = [
       </svg>
     ),
   },
+  {
+    view: "docs",
+    title: "Docs Builder",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <path d="M14 2v6h6"/>
+        <path d="M8 13h8"/>
+        <path d="M8 17h6"/>
+      </svg>
+    ),
+  },
+  {
+    view: "apitest",
+    title: "API Test",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M8 3h8"/>
+        <path d="M9 3v4l-4 7a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-4-7V3"/>
+        <path d="M8 14h8"/>
+      </svg>
+    ),
+  },
 ];
 
 export function ActivityBar() {
@@ -82,8 +105,19 @@ export function ActivityBar() {
   const setSidebarView = useEditorStore((s) => s.setSidebarView);
   const sidebarVisible = useEditorStore((s) => s.sidebarVisible);
   const setSidebarVisible = useEditorStore((s) => s.setSidebarVisible);
+  const mainView = useEditorStore((s) => s.mainView);
+  const setMainView = useEditorStore((s) => s.setMainView);
 
   const handleClick = (view: View) => {
+    if (view === "docs" || view === "apitest") {
+      setMainView(view);
+      return;
+    }
+
+    if (mainView !== "editor") {
+      setMainView("editor");
+    }
+
     if (sidebarView === view && sidebarVisible) {
       setSidebarVisible(false);
     } else {
@@ -97,7 +131,9 @@ export function ActivityBar() {
       {items.map((item) => (
         <button
           key={item.view}
-          className={`ab-btn ${sidebarView === item.view && sidebarVisible ? "active" : ""}`}
+          className={`ab-btn ${(item.view === "docs" || item.view === "apitest")
+            ? (mainView === item.view ? "active" : "")
+            : (sidebarView === item.view && sidebarVisible ? "active" : "")}`}
           onClick={() => handleClick(item.view)}
           title={item.title}
         >

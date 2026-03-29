@@ -146,22 +146,22 @@ button, input, select, textarea {
   background: var(--bg-primary);
 }
 
-/* Sidebar visible: sidebar (220px) + editor (1fr) + ai panel (var) */
+/* Sidebar visible: activity + sidebar + editor + ai */
 .app-content.sidebar-open {
-  grid-template-columns: 220px 1fr var(--ai-width, 340px);
+  grid-template-columns: 48px 260px 1fr var(--ai-width, 340px);
 }
 
-/* Sidebar hidden: editor (1fr) + ai panel (var) */
+/* Sidebar hidden: activity + editor + ai */
 .app-content.sidebar-closed {
-  grid-template-columns: 1fr var(--ai-width, 340px);
+  grid-template-columns: 48px 1fr var(--ai-width, 340px);
 }
 
 /* When AI panel is floating */
 .app-content.sidebar-open.ai-floating {
-  grid-template-columns: 220px 1fr 0px;
+  grid-template-columns: 48px 260px 1fr 0px;
 }
 .app-content.sidebar-closed.ai-floating {
-  grid-template-columns: 1fr 0px;
+  grid-template-columns: 48px 1fr 0px;
 }
 
 .ai-pane {
@@ -215,6 +215,7 @@ button, input, select, textarea {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .sidebar-content {
@@ -232,6 +233,14 @@ button, input, select, textarea {
   flex-direction: column;
   min-width: 0;
   position: relative;
+}
+
+.workspace-page {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-primary);
 }
 
 .editor-area {

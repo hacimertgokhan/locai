@@ -14,6 +14,9 @@ import { useEffect, useCallback, useState, useRef } from "react";
 
 import { SkillsPanel } from "./components/Sidebar/SkillsPanel";
 import { MCPPanel } from "./components/Sidebar/MCPPanel";
+import { SidebarModelPicker } from "./components/Sidebar/SidebarModelPicker";
+import { DocsPanel } from "./components/DocsPanel/DocsPanel";
+import { ApiTestPanel } from "./components/ApiTestPanel/ApiTestPanel";
 
 // ── Sidebar content based on active view ─────────────────────────
 function SidebarContent() {
@@ -25,7 +28,13 @@ function SidebarContent() {
     case "history": return <HistoryPanel />;
     case "skills": return <SkillsPanel />;
     case "mcp": return <MCPPanel />;
-    default: return <FileTree />;
+    default:
+      return (
+        <>
+          <SidebarModelPicker />
+          <FileTree />
+        </>
+      );
   }
 }
 
@@ -85,6 +94,7 @@ export default function App() {
   const activeProjectTabId = useEditorStore((s) => s.activeProjectTabId);
   const settings = useEditorStore((s) => s.settings);
   const aiPanelMode = useEditorStore((s) => s.aiPanelMode);
+  const mainView = useEditorStore((s) => s.mainView);
   
   const [aiWidth, setAiWidth] = useState(340);
   const [aiHoverOpen, setAiHoverOpen] = useState(false);
@@ -157,6 +167,7 @@ export default function App() {
 
       {/* ── Main content row ── */}
       <div className={`app-content ${sidebarVisible ? "sidebar-open" : "sidebar-closed"} ${aiPanelMode === "floating" ? "ai-floating" : ""}`}>
+        <ActivityBar />
         {sidebarVisible && (
           <div className="sidebar">
             <div className="sidebar-content">
@@ -164,17 +175,23 @@ export default function App() {
             </div>
           </div>
         )}
-        <EditorPane />
+        {mainView === "docs" ? (
+          <div className="workspace-page">
+            <DocsPanel />
+          </div>
+        ) : mainView === "apitest" ? (
+          <div className="workspace-page">
+            <ApiTestPanel />
+          </div>
+        ) : (
+          <EditorPane />
+        )}
         <div 
           className={`ai-pane ${aiPanelMode === "floating" ? "floating" : ""} ${aiHoverOpen ? "hover-open" : ""}`}
         >
           {aiPanelMode === "pinned" && <div className="ai-resizer" onMouseDown={startResize} />}
           <AIPanel />
         </div>
-      </div>
-
-      <div className="activity-bar-row">
-        <ActivityBar />
       </div>
 
       {showSettings && <SettingsModal />}

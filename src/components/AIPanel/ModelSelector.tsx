@@ -1,7 +1,9 @@
+
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModelInfo } from "../../types";
 import { useEditorStore, LLMProvider } from "../../store/editorStore";
+import { RefreshCw } from "lucide-react";
 
 export function ModelSelector() {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -35,7 +37,7 @@ export function ModelSelector() {
   useEffect(() => { fetchModels(); }, [provider, settings.ollamaUrl, settings.lmstudioUrl]);
 
   return (
-    <div className="model-selector">
+    <div className="model-selector animate-slide-up">
       <div className="provider-tabs">
         {(["ollama", "lmstudio"] as LLMProvider[]).map((p) => (
           <button
@@ -46,23 +48,31 @@ export function ModelSelector() {
             {p === "ollama" ? "Ollama" : "LM Studio"}
           </button>
         ))}
-        <button className="refresh-btn" onClick={fetchModels} title="Refresh">↻</button>
       </div>
 
-      {error ? (
-        <div className="model-error">{error}</div>
-      ) : (
-        <select
-          className="model-select"
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          disabled={loading || models.length === 0}
-        >
-          {loading && <option value="">Loading…</option>}
-          {!loading && models.length === 0 && <option value="">No models</option>}
-          {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
-        </select>
-      )}
+      <div className="model-select-wrapper">
+        {error ? (
+          <div className="model-error text-xs">{error}</div>
+        ) : (
+          <select
+            className="model-select"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={loading || models.length === 0}
+          >
+            {loading && <option value="">Loading models…</option>}
+            {!loading && models.length === 0 && <option value="">No models available</option>}
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id.split("/").pop()} {/* Hide path prefixes if any */}
+              </option>
+            ))}
+          </select>
+        )}
+        <button className="refresh-btn" onClick={fetchModels} title="Refresh Models">
+          <RefreshCw size={14} className={loading ? "ai-spin" : ""} />
+        </button>
+      </div>
     </div>
   );
 }
